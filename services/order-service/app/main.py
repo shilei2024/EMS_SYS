@@ -3,12 +3,15 @@
 """
 import logging
 import sys
+import traceback
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
 from app.api.endpoints import router
@@ -24,6 +27,58 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ==================== 全局错误处理 ====================
+
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """全局异常处理器"""
+    # 记录详细错误信息（包括堆栈跟踪）
+    logger.error(
+        f"未处理的异常 - {request.method} {request.url.path}\n"
+        f"异常类型：{type(exc).__name__}\n"
+        f"异常信息：{str(exc)}\n"
+        f"堆栈跟踪:\n{traceback.format_exc()}"
+    )
+
+    # 返回用户友好的错误消息
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "内部服务器错误",
+            "message": "服务器处理请求时发生错误，请稍后重试",
+            "path": request.url.path
+        }
+    )
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """请求验证异常处理器"""
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": ".".join(str(x) for x in error.get("loc", [])),
+            "message": error.get("msg"),
+            "type": error.get("type")
+        })
+
+    logger.warning(f"请求验证失败 - {request.method} {request.url.path}: {errors}")
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "success": False,
+            "error": "请求验证失败",
+            "message": "请求参数格式不正确",
+            "details": errors,
+            "path": request.url.path
+        }
+    )
+
+
+# 注册全局异常处理器
+# 注意：需要在创建 app 之后，注册路由之前注册
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """
@@ -32,7 +87,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # 启动时执行
     logger.info("订单服务启动中...")
     logger.info(f"环境：{settings.environment}")
-    logger.info(f"数据库：{settings.database_url[:30]}...")
+    logger.info(f"数据库：{settings.database_url[:30] if settings.database_url else '未配置'}...")
+
+    # 验证生产环境配置
+    if settings.environment == "production":
+        if not settings.database_url:
+            logger.error("生产环境缺少 DATABASE_URL 配置")
+            raise ValueError("生产环境必须设置 DATABASE_URL")
+        if not settings.redis_url:
+            logger.error("生产环境缺少 REDIS_URL 配置")
+            raise ValueError("生产环境必须设置 REDIS_URL")
 
     # 初始化数据库连接池
     await get_db_pool()
@@ -58,10 +122,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 配置 CORS
+# 注册全局异常处理器
+app.add_exception_handler(Exception, global_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+# 配置 CORS - 从配置读取，生产环境限制具体域名
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else [
+        "http://localhost:3000",
+        "http://localhost:8080",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -2,7 +2,7 @@
 订单服务配置
 """
 import os
-from typing import Optional
+from typing import Optional, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,14 +29,17 @@ class Settings(BaseSettings):
     workers: int = 1
 
     # ==================== 数据库配置 ====================
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/component_agent"
-    database_pool_size: int = 10
-    database_max_overflow: int = 20
-    database_pool_timeout: int = 30
-    database_pool_recycle: int = 3600
+    # 生产环境必须通过环境变量设置
+    database_url: str | None = os.environ.get("DATABASE_URL")
+    # 微服务共享数据库，使用较小的连接池防止连接耗尽
+    # 默认池大小：5 个连接，最大溢出：10 个连接
+    database_pool_size: int = int(os.environ.get("DATABASE_POOL_SIZE", "5"))
+    database_max_overflow: int = int(os.environ.get("DATABASE_MAX_OVERFLOW", "10"))
+    database_pool_timeout: int = int(os.environ.get("DATABASE_POOL_TIMEOUT", "30"))
+    database_pool_recycle: int = int(os.environ.get("DATABASE_POOL_RECYCLE", "3600"))
 
     # ==================== Redis 配置 ====================
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str | None = os.environ.get("REDIS_URL")
     redis_prefix: str = "order:"
 
     # ==================== OCR 配置 ====================
@@ -56,19 +59,26 @@ class Settings(BaseSettings):
 
     # ==================== 对象存储配置 ====================
     minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    minio_access_key: str = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+    minio_secret_key: str = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
     minio_bucket: str = "orders"
     minio_use_ssl: bool = False
+
+    # ==================== CORS 配置 ====================
+    cors_origins: List[str] = os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:8080"
+    ).split(",")
 
     # ==================== 消息队列配置 ====================
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     rabbitmq_exchange: str = "orders"
 
     # ==================== 日志配置 ====================
-    log_level: str = "INFO"
-    log_format: str = "json"  # json, text
-    log_file: Optional[str] = None
+    # 生产环境使用 WARNING 级别，开发环境使用 INFO
+    log_level: str = os.environ.get("LOG_LEVEL", "WARNING" if os.environ.get("ENVIRONMENT") == "production" else "INFO")
+    log_format: str = os.environ.get("LOG_FORMAT", "json")  # json, text
+    log_file: Optional[str] = os.environ.get("LOG_FILE", None)
 
     # ==================== 限流配置 ====================
     rate_limit_per_minute: int = 100
@@ -88,6 +98,16 @@ class Settings(BaseSettings):
                 "image/jpeg",
                 "image/jpg"
             ]
+
+        # 生产环境验证关键配置
+        if self.environment == "production":
+            errors = []
+            if not self.database_url:
+                errors.append("DATABASE_URL environment variable is required")
+            if not self.redis_url:
+                errors.append("REDIS_URL environment variable is required")
+            if errors:
+                raise ValueError("; ".join(errors))
 
 
 # 全局配置实例

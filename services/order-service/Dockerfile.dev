@@ -5,8 +5,8 @@ WORKDIR /app
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # 图像处理
-    libgl1-mesa-glx \
-    libglib2.3.0 \
+    libgl1 \
+    libglib2.0-0 \
     # 文件类型检测
     libmagic1 \
     # 清理

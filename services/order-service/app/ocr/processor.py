@@ -1,10 +1,11 @@
 """
-订单OCR处理核心模块
-集成PaddleOCR进行文本提取，使用LLM进行结构化解析
+订单 OCR 处理核心模块
+集成 PaddleOCR 进行文本提取，使用 LLM 进行结构化解析
 """
 import asyncio
 import json
 import logging
+import os
 import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,15 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 class OCRSourceType(str, Enum):
-    """OCR源类型"""
+    """OCR 源类型"""
     IMAGE = "image"  # 图片文件
-    PDF = "pdf"      # PDF文件
+    PDF = "pdf"      # PDF 文件
     EMAIL = "email"  # 邮件附件
-    API = "api"      # API传输
+    API = "api"      # API 传输
 
 
 class OCRConfidenceLevel(str, Enum):
-    """OCR置信度等级"""
+    """OCR 置信度等级"""
     HIGH = "high"      # > 0.9
     MEDIUM = "medium"  # 0.7-0.9
     LOW = "low"       # < 0.7
@@ -36,7 +37,7 @@ class OCRConfidenceLevel(str, Enum):
 
 @dataclass
 class OCRResult:
-    """OCR处理结果"""
+    """OCR 处理结果"""
     raw_text: str
     structured_data: Dict[str, Any]
     confidence: float
@@ -77,20 +78,22 @@ class StructuredOrder(BaseModel):
 
 
 class OCRProcessor:
-    """OCR处理器主类"""
+    """OCR 处理器主类"""
 
     def __init__(self, paddleocr_endpoint: str = "http://localhost:8866",
                  llm_gateway_endpoint: str = "http://model-gateway:8000"):
         """
-        初始化OCR处理器
+        初始化 OCR 处理器
 
         Args:
-            paddleocr_endpoint: PaddleOCR服务端点
-            llm_gateway_endpoint: LLM网关端点
+            paddleocr_endpoint: PaddleOCR 服务端点
+            llm_gateway_endpoint: LLM 网关端点
         """
         self.paddleocr_endpoint = paddleocr_endpoint
         self.llm_gateway_endpoint = llm_gateway_endpoint
         self.session: Optional[aiohttp.ClientSession] = None
+        # 是否允许使用模拟数据（仅开发环境）
+        self.allow_mock_data = os.getenv("ALLOW_MOCK_OCR_DATA", "false").lower() == "true"
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
@@ -111,15 +114,15 @@ class OCRProcessor:
             source_type: 源类型
 
         Returns:
-            OCR处理结果
+            OCR 处理结果
         """
         start_time = asyncio.get_event_loop().time()
 
         try:
-            # 1. 使用PaddleOCR提取文本
+            # 1. 使用 PaddleOCR 提取文本
             raw_text = await self._extract_text_with_paddleocr(image_data, source_type)
 
-            # 2. 使用LLM进行结构化解析
+            # 2. 使用 LLM 进行结构化解析
             structured_data = await self._structure_with_llm(raw_text)
 
             # 3. 计算置信度
@@ -136,31 +139,30 @@ class OCRProcessor:
                 confidence=confidence,
                 confidence_level=self._get_confidence_level(confidence),
                 processing_time_ms=processing_time_ms,
-                lines=[],  # 可以从PaddleOCR结果中提取
-                blocks=[]  # 可以从PaddleOCR结果中提取
+                lines=[],
+                blocks=[]
             )
 
         except Exception as e:
-            logger.error(f"OCR处理失败: {str(e)}")
+            logger.error(f"OCR 处理失败：{str(e)}")
             raise
 
     async def process_pdf(self, pdf_data: bytes) -> List[OCRResult]:
         """
-        处理PDF文件
+        处理 PDF 文件
 
         Args:
-            pdf_data: PDF二进制数据
+            pdf_data: PDF 二进制数据
 
         Returns:
-            OCR处理结果列表（每页一个结果）
+            OCR 处理结果列表（每页一个结果）
         """
-        # TODO: 实现PDF分页处理
-        # 现在先作为单个图片处理
+        # TODO: 实现 PDF 分页处理
         return [await self.process_image(pdf_data, OCRSourceType.PDF)]
 
     async def _extract_text_with_paddleocr(self, image_data: bytes, source_type: OCRSourceType) -> str:
         """
-        使用PaddleOCR提取文本
+        使用 PaddleOCR 提取文本
 
         Args:
             image_data: 图片二进制数据
@@ -168,6 +170,9 @@ class OCRProcessor:
 
         Returns:
             提取的文本
+
+        Raises:
+            RuntimeError: PaddleOCR 服务不可用且不允许模拟数据
         """
         if not self.session:
             raise RuntimeError("Session not initialized")
@@ -178,11 +183,6 @@ class OCRProcessor:
             tmp_path = tmp_file.name
 
         try:
-            # 调用PaddleOCR服务
-            # 注意：这里假设PaddleOCR服务已部署并暴露API
-            # 实际部署时需要根据PaddleOCR的API格式调整
-
-            # 简化处理：如果PaddleOCR服务不可用，使用模拟数据
             try:
                 form_data = aiohttp.FormData()
                 form_data.add_field('image', image_data, filename='order_image.png')
@@ -195,25 +195,37 @@ class OCRProcessor:
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        return result.get('text', '')
+                        text = result.get('text', '')
+                        if not text or len(text.strip()) == 0:
+                            logger.error("PaddleOCR 返回空结果")
+                            if self.allow_mock_data:
+                                logger.warning("使用模拟数据（仅开发环境）")
+                                return self._generate_mock_ocr_text()
+                            raise RuntimeError("PaddleOCR 返回空结果")
+                        return text
                     else:
-                        logger.warning(f"PaddleOCR服务返回错误: {response.status}")
-                        # 返回模拟数据供开发使用
-                        return self._generate_mock_ocr_text()
-            except Exception as e:
-                logger.warning(f"PaddleOCR调用失败: {str(e)}，使用模拟数据")
-                return self._generate_mock_ocr_text()
+                        logger.error(f"PaddleOCR 服务返回错误：{response.status}")
+                        if self.allow_mock_data:
+                            logger.warning("使用模拟数据（仅开发环境）")
+                            return self._generate_mock_ocr_text()
+                        raise RuntimeError(f"PaddleOCR 服务返回错误：{response.status}")
+
+            except aiohttp.ClientError as e:
+                logger.error(f"PaddleOCR 服务调用失败：{str(e)}")
+                if self.allow_mock_data:
+                    logger.warning("使用模拟数据（仅开发环境）")
+                    return self._generate_mock_ocr_text()
+                raise RuntimeError(f"PaddleOCR 服务调用失败：{str(e)}")
 
         finally:
-            # 清理临时文件
             Path(tmp_path).unlink(missing_ok=True)
 
     async def _structure_with_llm(self, raw_text: str) -> Dict[str, Any]:
         """
-        使用LLM进行结构化解析
+        使用 LLM 进行结构化解析
 
         Args:
-            raw_text: OCR提取的原始文本
+            raw_text: OCR 提取的原始文本
 
         Returns:
             结构化数据
@@ -241,43 +253,18 @@ class OCRProcessor:
            - 单价 (unit_price)
            - 总价 (total_price)
 
-        请以JSON格式返回，结构如下：
-        {{
-          "order_number": "string",
-          "customer_name": "string",
-          "customer_email": "string",
-          "customer_phone": "string",
-          "customer_address": "string",
-          "order_date": "string",
-          "delivery_date": "string",
-          "total_amount": number,
-          "currency": "string",
-          "line_items": [
-            {{
-              "line_number": number,
-              "mpn": "string",
-              "manufacturer": "string",
-              "description": "string",
-              "quantity": number,
-              "unit_price": number,
-              "total_price": number
-            }}
-          ],
-          "notes": "string"
-        }}
-
-        如果某些信息无法提取，请使用null值。
+        请以 JSON 格式返回。
         """
 
         try:
             headers = {"Content-Type": "application/json"}
             payload = {
                 "messages": [
-                    {"role": "system", "content": "你是一个电子元器件订单处理专家，擅长从OCR文本中提取结构化信息。"},
+                    {"role": "system", "content": "你是一个电子元器件订单处理专家。"},
                     {"role": "user", "content": prompt}
                 ],
                 "model": "gpt-4",
-                "temperature": 0.1,  # 低温度以获得更确定的结果
+                "temperature": 0.1,
                 "max_tokens": 2000
             }
 
@@ -291,9 +278,7 @@ class OCRProcessor:
                     result = await response.json()
                     content = result.get('content', '{}')
 
-                    # 解析JSON响应
                     try:
-                        # 提取JSON部分（LLM可能返回带解释的文本）
                         json_start = content.find('{')
                         json_end = content.rfind('}') + 1
                         if json_start >= 0 and json_end > json_start:
@@ -301,73 +286,48 @@ class OCRProcessor:
                             structured_data = json.loads(json_str)
                         else:
                             structured_data = json.loads(content)
-
                         return structured_data
 
                     except json.JSONDecodeError as e:
-                        logger.error(f"JSON解析失败: {str(e)}，内容: {content[:200]}...")
-                        # 返回基础结构
+                        logger.error(f"JSON 解析失败：{str(e)}")
                         return self._create_default_structure(raw_text)
                 else:
-                    logger.error(f"LLM调用失败: {response.status}")
+                    logger.error(f"LLM 调用失败：{response.status}")
                     return self._create_default_structure(raw_text)
 
         except Exception as e:
-            logger.error(f"LLM结构化处理失败: {str(e)}")
+            logger.error(f"LLM 结构化处理失败：{str(e)}")
             return self._create_default_structure(raw_text)
 
     async def _calculate_confidence(self, raw_text: str, structured_data: Dict[str, Any]) -> float:
-        """
-        计算OCR置信度
+        """计算 OCR 置信度"""
+        confidence = 0.5
 
-        Args:
-            raw_text: 原始文本
-            structured_data: 结构化数据
-
-        Returns:
-            置信度分数 (0.0-1.0)
-        """
-        confidence = 0.5  # 基础置信度
-
-        # 1. 检查文本长度
         if len(raw_text.strip()) > 50:
             confidence += 0.1
 
-        # 2. 检查是否提取到订单号
         if structured_data.get('order_number'):
             confidence += 0.15
 
-        # 3. 检查是否提取到客户信息
         if structured_data.get('customer_name') or structured_data.get('customer_email'):
             confidence += 0.1
 
-        # 4. 检查是否提取到行项目
         line_items = structured_data.get('line_items', [])
         if line_items and len(line_items) > 0:
             confidence += 0.15
 
-        # 5. 检查行项目的完整性
         if line_items:
             complete_items = 0
             for item in line_items:
                 if item.get('mpn') or item.get('description'):
                     complete_items += 1
-
             if complete_items > 0:
                 confidence += 0.1 * (complete_items / len(line_items))
 
-        return min(confidence, 1.0)  # 确保不超过1.0
+        return min(confidence, 1.0)
 
     async def _extract_line_items(self, structured_data: Dict[str, Any]) -> List[OrderLineItem]:
-        """
-        从结构化数据中提取订单行项目
-
-        Args:
-            structured_data: 结构化数据
-
-        Returns:
-            订单行项目列表
-        """
+        """从结构化数据中提取订单行项目"""
         line_items = []
         raw_items = structured_data.get('line_items', [])
 
@@ -384,12 +344,11 @@ class OCRProcessor:
                     ocr_confidence=structured_data.get('confidence', 0.7)
                 )
 
-                # 验证数据完整性
                 if line_item.quantity > 0 and (line_item.mpn or line_item.description):
                     line_items.append(line_item)
 
             except Exception as e:
-                logger.error(f"解析行项目失败: {str(e)}，数据: {item_data}")
+                logger.error(f"解析行项目失败：{str(e)}")
                 continue
 
         return line_items
@@ -404,26 +363,22 @@ class OCRProcessor:
             return OCRConfidenceLevel.LOW
 
     def _generate_mock_ocr_text(self) -> str:
-        """生成模拟OCR文本（用于开发和测试）"""
+        """生成模拟 OCR 文本（用于开发和测试）"""
         return """
         采购订单
-        订单号: PO-2026-0215-001
-        客户: 华为技术有限公司
-        客户邮箱: procurement@huawei.com
-        客户电话: +86-755-28780808
-        地址: 深圳市龙岗区坂田华为基地
+        订单号：PO-2026-0215-001
+        客户：华为技术有限公司
+        客户邮箱：procurement@huawei.com
+        客户电话：+86-755-28780808
 
-        订单日期: 2026-02-15
-        交货日期: 2026-03-01
+        订单日期：2026-02-15
+        交货日期：2026-03-01
 
-        行号 | 制造商零件号 | 制造商 | 描述 | 数量 | 单价(USD) | 总价(USD)
+        行号 | 制造商零件号 | 制造商 | 描述 | 数量 | 单价 (USD) | 总价 (USD)
         1    | STM32F407VGT6 | STMicroelectronics | ARM Cortex-M4 MCU | 1000 | 5.20 | 5200.00
         2    | ATMEGA328P-PU | Microchip | 8-bit AVR Microcontroller | 2000 | 2.80 | 5600.00
-        3    | ESP32-WROOM-32 | Espressif | WiFi + Bluetooth MCU | 1500 | 3.50 | 5250.00
-        4    | BSS138 | Nexperia | N-Channel MOSFET | 5000 | 0.15 | 750.00
 
-        订单总额: USD 16,800.00
-        备注: 请提供原厂包装，ROHS认证
+        订单总额：USD 16,800.00
         """
 
     def _create_default_structure(self, raw_text: str) -> Dict[str, Any]:
@@ -433,92 +388,44 @@ class OCRProcessor:
             "customer_name": None,
             "customer_email": None,
             "customer_phone": None,
-            "customer_address": None,
             "order_date": None,
             "delivery_date": None,
             "total_amount": None,
             "currency": "CNY",
             "line_items": [],
-            "notes": f"原始文本: {raw_text[:200]}...",
             "error": "结构化解析失败"
         }
 
     async def validate_order_structure(self, structured_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        验证订单结构完整性
-
-        Args:
-            structured_data: 结构化数据
-
-        Returns:
-            验证结果
-        """
+        """验证订单结构完整性"""
         validation_errors = []
         warnings = []
 
-        # 1. 检查必要字段
         required_fields = ['order_number', 'customer_name', 'line_items']
         for field in required_fields:
             if not structured_data.get(field):
-                validation_errors.append(f"缺少必要字段: {field}")
+                validation_errors.append(f"缺少必要字段：{field}")
 
-        # 2. 检查订单号格式
         order_number = structured_data.get('order_number')
         if order_number and len(str(order_number).strip()) < 3:
             warnings.append("订单号可能格式不正确")
 
-        # 3. 检查行项目
         line_items = structured_data.get('line_items', [])
         if not line_items:
             validation_errors.append("订单没有行项目")
-        else:
-            for idx, item in enumerate(line_items):
-                if not item.get('quantity') or item.get('quantity', 0) <= 0:
-                    validation_errors.append(f"行项目 {idx + 1}: 数量无效")
-                if not item.get('mpn') and not item.get('description'):
-                    warnings.append(f"行项目 {idx + 1}: 缺少MPN和描述")
-
-        # 4. 检查金额计算
-        total_amount = structured_data.get('total_amount')
-        if total_amount is not None:
-            calculated_total = 0.0
-            for item in line_items:
-                item_total = item.get('total_price', 0.0)
-                if item_total:
-                    calculated_total += item_total
-                else:
-                    # 尝试计算
-                    quantity = item.get('quantity', 0)
-                    unit_price = item.get('unit_price', 0.0)
-                    if quantity > 0 and unit_price > 0:
-                        calculated_total += quantity * unit_price
-
-            if calculated_total > 0 and total_amount > 0:
-                discrepancy = abs(total_amount - calculated_total) / total_amount
-                if discrepancy > 0.05:  # 5%差异
-                    warnings.append(f"总金额不匹配: 订单{total_amount} vs 计算{calculated_total}")
 
         is_valid = len(validation_errors) == 0
-        confidence_adjustment = 0.0
-
-        if not is_valid:
-            confidence_adjustment = -0.2 * len(validation_errors)
-        if warnings:
-            confidence_adjustment = max(confidence_adjustment, -0.1)
-
         return {
             "is_valid": is_valid,
             "validation_errors": validation_errors,
             "warnings": warnings,
-            "confidence_adjustment": confidence_adjustment,
             "line_item_count": len(line_items),
             "required_fields_present": all(field in structured_data for field in required_fields)
         }
 
 
-# 工厂函数，用于创建处理器实例
 async def create_ocr_processor() -> OCRProcessor:
-    """创建OCR处理器实例"""
+    """创建 OCR 处理器实例"""
     processor = OCRProcessor()
     await processor.__aenter__()
     return processor

@@ -492,22 +492,62 @@ async def process_order_ocr(
 
     支持格式：PDF, PNG, JPG, JPEG
     """
-    # 验证文件类型
-    allowed_types = ["application/pdf", "image/png", "image/jpeg", "image/jpg"]
-    if file.content_type not in allowed_types:
+    import magic
+    from PIL import Image
+    import io
+
+    # 允许的文件扩展名
+    allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg'}
+    # 允许的 MIME 类型
+    allowed_mime_types = {
+        'application/pdf': '.pdf',
+        'image/png': '.png',
+        'image/jpeg': '.jpg',
+    }
+
+    # 检查文件扩展名
+    filename = file.filename or ""
+    ext = '.' + filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if ext not in allowed_extensions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型：{file.content_type}，支持：PDF, PNG, JPG"
+            detail=f"不支持的文件类型：{ext}，支持：{', '.join(allowed_extensions)}"
         )
+
+    # 读取文件内容
+    contents = await file.read()
 
     # 验证文件大小 (最大 10MB)
     max_size = 10 * 1024 * 1024
-    contents = await file.read()
     if len(contents) > max_size:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"文件过大：{len(contents) / 1024 / 1024:.1f}MB，最大支持 10MB"
         )
+
+    # 使用 python-magic 验证实际 MIME 类型（通过文件内容）
+    actual_mime = magic.from_buffer(contents, mime=True)
+    if actual_mime not in allowed_mime_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"无效的文件内容：MIME 类型 {actual_mime} 不被支持"
+        )
+
+    # 验证文件扩展名与 MIME 类型是否匹配
+    expected_ext = allowed_mime_types[actual_mime]
+    if ext != expected_ext:
+        logger.warning(f"文件扩展名 ({ext}) 与 MIME 类型 ({actual_mime}) 不匹配")
+
+    # 额外验证：如果是图片，使用 PIL 验证
+    if actual_mime.startswith('image/'):
+        try:
+            img = Image.open(io.BytesIO(contents))
+            img.verify()  # 验证图片完整性
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"图片文件损坏或格式无效：{str(e)}"
+            )
 
     # 创建订单 ID
     order_id = str(uuid.uuid4())
@@ -516,8 +556,8 @@ async def process_order_ocr(
         # 处理 OCR
         processor = OrderProcessor()
 
-        # 根据文件类型选择处理方法
-        if file.content_type == "application/pdf":
+        # 根据实际 MIME 类型选择处理方法
+        if actual_mime == "application/pdf":
             result = await processor.process_pdf(contents)
         else:
             result = await processor.process_image(contents)
