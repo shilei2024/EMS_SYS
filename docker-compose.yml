@@ -159,11 +159,13 @@ services:
     container_name: ems_sys-model-gateway
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent?sslmode=disable"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379/0"
+      SECRET_KEY: ${JWT_SECRET:-dev-secret-key-for-testing-only-not-for-production}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DEBUG: "true"
+      ENVIRONMENT: "development"
       PORT: "8000"
     ports:
       - "8000:8000"
@@ -187,7 +189,7 @@ services:
     container_name: ems_sys-auth-service
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent?sslmode=disable"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379/0"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET environment variable is required - generate a random string of at least 32 characters}
       SERVER_PORT: "8001"
@@ -345,12 +347,20 @@ services:
       - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - model-gateway
-      - auth-service
+      model-gateway:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      finance-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/nginx-health"]
+      interval: 10s
+      timeout: 5s
       retries: 3
 
   # ==================== 日志收集 (ELK) ====================

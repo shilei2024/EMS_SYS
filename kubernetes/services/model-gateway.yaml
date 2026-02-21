@@ -47,12 +47,13 @@ spec:
               name: api-keys
               key: anthropic-api-key
         resources:
+          # 模型网关处理 LLM 请求，需要更多内存
           requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
             memory: "1Gi"
             cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /health

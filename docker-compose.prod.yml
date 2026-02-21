@@ -1,5 +1,5 @@
 # Docker Compose v2 生产环境配置
-# 用法：docker compose -f docker-compose.prod.yml up -d
+# 用法：docker compose -f docker-compose.prod.yml up -d --build
 # 注意：Docker Compose v2 使用横杠命令格式 (docker compose)，而非 v1 的下划线格式 (docker-compose)
 
 name: ems_sys
@@ -172,7 +172,9 @@ services:
 
   # ==================== 微服务 ====================
   model-gateway:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-model-gateway:main
+    build:
+      context: ./services/model-gateway
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -198,10 +200,12 @@ services:
         limits:
           memory: 512M
       mode: replicated
-      replicas: 2
+      replicas: 1
 
   auth-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-auth-service:main
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -225,11 +229,12 @@ services:
       resources:
         limits:
           memory: 256M
-      mode: replicated
-      replicas: 2
+      replicas: 1
 
   order-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-order-service:main
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -263,12 +268,12 @@ services:
       resources:
         limits:
           memory: 1G
-      mode: replicated
-      replicas: 2
+      replicas: 1
 
   kg-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-kg-service:main
-    container_name: ems_sys-kg-service
+    build:
+      context: ./services/kg-service
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       NEO4J_URI: "bolt://neo4j:7687"
@@ -296,8 +301,9 @@ services:
           memory: 512M
 
   finance-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-finance-service:main
-    container_name: ems_sys-finance-service
+    build:
+      context: ./services/finance-service
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -322,8 +328,9 @@ services:
           memory: 256M
 
   inventory-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-inventory-service:main
-    container_name: ems_sys-inventory-service
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile.dev
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -352,7 +359,9 @@ services:
 
   # ==================== 前端服务 ====================
   external-portal:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-external-portal:main
+    build:
+      context: ./frontend/external-portal
+      dockerfile: Dockerfile
     restart: always
     environment:
       NUXT_PUBLIC_API_BASE: "http://nginx:8001"
@@ -368,11 +377,12 @@ services:
       resources:
         limits:
           memory: 512M
-      mode: replicated
-      replicas: 2
+      replicas: 1
 
   internal-admin:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-internal-admin:main
+    build:
+      context: ./frontend/internal-admin
+      dockerfile: Dockerfile
     restart: always
     environment:
       VITE_API_BASE: "http://nginx:8001"
@@ -388,7 +398,6 @@ services:
       resources:
         limits:
           memory: 256M
-      mode: replicated
       replicas: 1
 
   # ==================== API 网关 (Nginx) ====================
