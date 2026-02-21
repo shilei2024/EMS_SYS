@@ -2,9 +2,10 @@
 模型网关配置
 """
 import os
+import sys
 from typing import List, Dict, Any
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -19,20 +20,17 @@ class Settings(BaseSettings):
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8000"))
 
-    # 数据库配置
-    database_url: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql://postgres:password@localhost:5432/component_agent"
-    )
+    # 数据库配置 - 生产环境必须设置环境变量
+    database_url: str | None = os.environ.get("DATABASE_URL")
 
-    # Redis配置
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Redis 配置 - 生产环境必须设置环境变量
+    redis_url: str | None = os.environ.get("REDIS_URL")
 
-    # 安全配置
-    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+    # 安全配置 - 生产环境必须设置环境变量
+    secret_key: str | None = os.environ.get("SECRET_KEY")
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
-    # CORS配置
+    # CORS 配置
     cors_origins: List[str] = [
         "http://localhost:3000",
         "http://localhost:8080",
@@ -58,7 +56,7 @@ class Settings(BaseSettings):
             "capabilities": ["chat", "completion"],
             "priority": 1,
             "is_enabled": True,
-            "cost_per_token": 0.03 / 1000  # 假设每千token $0.03
+            "cost_per_token": 0.03 / 1000  # 假设每千 token $0.03
         },
         {
             "name": "gpt-3.5-turbo",
@@ -72,7 +70,7 @@ class Settings(BaseSettings):
             "capabilities": ["chat", "completion"],
             "priority": 2,
             "is_enabled": True,
-            "cost_per_token": 0.002 / 1000  # 假设每千token $0.002
+            "cost_per_token": 0.002 / 1000  # 假设每千 token $0.002
         },
         {
             "name": "claude-3-haiku-20240307",
@@ -86,7 +84,7 @@ class Settings(BaseSettings):
             "capabilities": ["chat", "completion"],
             "priority": 3,
             "is_enabled": True,
-            "cost_per_token": 0.001 / 1000  # 假设每千token $0.001
+            "cost_per_token": 0.001 / 1000  # 假设每千 token $0.001
         }
     ]
 
@@ -112,6 +110,26 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = False
 
+    def validate_production_settings(self):
+        """生产环境验证关键配置"""
+        if os.getenv("ENVIRONMENT") == "production":
+            errors = []
+            if not self.database_url:
+                errors.append("DATABASE_URL environment variable is required")
+            if not self.redis_url:
+                errors.append("REDIS_URL environment variable is required")
+            if not self.secret_key:
+                errors.append("SECRET_KEY environment variable is required")
+            elif len(self.secret_key) < 32:
+                errors.append("SECRET_KEY must be at least 32 characters")
+
+            if errors:
+                raise ValueError("; ".join(errors))
+
 
 # 全局设置实例
 settings = Settings()
+
+# 开发环境下允许空值，但生产环境必须验证
+if os.getenv("ENVIRONMENT") == "production":
+    settings.validate_production_settings()

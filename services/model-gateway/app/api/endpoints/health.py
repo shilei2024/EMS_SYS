@@ -4,7 +4,7 @@
 import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status as http_status
 
 from app.core.gateway import get_gateway
 
@@ -24,15 +24,15 @@ async def health_check():
 
     # 检查是否有健康的提供商
     has_healthy_provider = any(
-        status["is_healthy"] for status in health_status.values()
+        h["is_healthy"] for h in health_status.values()
     )
 
     # 计算总体指标
     total_providers = len(health_status)
-    healthy_providers = sum(1 for s in health_status.values() if s["is_healthy"])
+    healthy_providers = sum(1 for h in health_status.values() if h["is_healthy"])
     health_ratio = healthy_providers / total_providers if total_providers > 0 else 0
 
-    status_code = status.HTTP_200_OK if has_healthy_provider else status.HTTP_503_SERVICE_UNAVAILABLE
+    status_code = http_status.HTTP_200_OK if has_healthy_provider else http_status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "status": "healthy" if has_healthy_provider else "unhealthy",

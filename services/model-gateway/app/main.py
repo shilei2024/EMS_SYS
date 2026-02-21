@@ -15,7 +15,7 @@ from app.core.gateway import (
     ChatMessage, ChatRequest, ChatResponse,
     get_gateway, initialize_gateway
 )
-from app.api import router as api_router
+from app.api.router import router as api_router
 
 
 @asynccontextmanager
@@ -87,26 +87,23 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """健康检查端点"""
+    """健康检查端点 - 检查应用是否正常运行"""
     gateway = get_gateway()
     health_status = gateway.get_health_status()
 
     # 检查是否有健康的提供商
     has_healthy_provider = any(
-        status["is_healthy"] for status in health_status.values()
+        h["is_healthy"] for h in health_status.values()
     )
 
-    status_code = status.HTTP_200_OK if has_healthy_provider else status.HTTP_503_SERVICE_UNAVAILABLE
-
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "status": "healthy" if has_healthy_provider else "unhealthy",
-            "has_healthy_provider": has_healthy_provider,
-            "providers": health_status,
-            "timestamp": asyncio.get_event_loop().time()
-        }
-    )
+    # 应用正常运行时返回 200，提供商健康状态在响应内容中
+    # Docker 健康检查只关心应用是否存活，不依赖外部服务状态
+    return {
+        "status": "healthy" if has_healthy_provider else "degraded",
+        "has_healthy_provider": has_healthy_provider,
+        "providers": health_status,
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 @app.get("/models")

@@ -1,27 +1,40 @@
+# Core FastAPI dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
+python-multipart==0.0.6
+
+# HTTP and async
 aiohttp==3.9.1
+httpx==0.25.2
 backoff==2.2.1
-redis==5.0.1
+tenacity==8.2.3
+
+# Database
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 alembic==1.13.0
+
+# Redis
+redis==5.0.1
+
+# Security and auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-httpx==0.25.2
-tenacity==8.2.3
+
+# Monitoring and logging
 prometheus-client==0.19.0
 structlog==23.2.0
-# AI/ML相关
+
+# AI/ML dependencies
 openai==1.6.1
 anthropic==0.18.0
-# 可选：本地模型支持
-llama-cpp-python==0.2.26
-# 开发依赖
+
+# Optional: local model support
+# llama-cpp-python==0.2.26
+
+# Development dependencies
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0

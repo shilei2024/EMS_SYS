@@ -430,13 +430,20 @@ class ModelGateway:
         """获取所有提供商的健康状态"""
         status = {}
         for name, provider in self.providers.items():
+            provider_type = provider.config.provider_type
+            # 如果是枚举类型，获取 value；如果已经是字符串，直接使用
+            if hasattr(provider_type, 'value'):
+                provider_type_value = provider_type.value
+            else:
+                provider_type_value = str(provider_type)
+
             status[name] = {
                 "is_healthy": provider.health.is_healthy,
                 "last_check": provider.health.last_check.isoformat() if provider.health.last_check else None,
                 "error_message": provider.health.error_message,
                 "response_time_ms": provider.health.response_time_ms,
                 "config": {
-                    "provider_type": provider.config.provider_type.value,
+                    "provider_type": provider_type_value,
                     "priority": provider.config.priority,
                     "is_enabled": provider.config.is_enabled
                 }
@@ -448,13 +455,28 @@ class ModelGateway:
         models = []
         for config in self.models.values():
             if config.is_enabled:
+                # 兼容 provider_type 为字符串或枚举类型
+                provider_type = config.provider_type
+                if hasattr(provider_type, 'value'):
+                    provider_type_value = provider_type.value
+                else:
+                    provider_type_value = str(provider_type)
+
+                # 兼容 capabilities 为字符串或枚举类型
+                capabilities_values = []
+                for c in config.capabilities:
+                    if hasattr(c, 'value'):
+                        capabilities_values.append(c.value)
+                    else:
+                        capabilities_values.append(str(c))
+
                 models.append({
                     "name": config.name,
                     "display_name": config.display_name,
-                    "provider_type": config.provider_type.value,
+                    "provider_type": provider_type_value,
                     "context_length": config.context_length,
                     "max_tokens": config.max_tokens,
-                    "capabilities": [c.value for c in config.capabilities],
+                    "capabilities": capabilities_values,
                     "priority": config.priority
                 })
         return models
