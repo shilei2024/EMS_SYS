@@ -46,9 +46,7 @@ CREATE TABLE user_sessions (
     device_info JSONB,
     ip_address INET,
     expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_user_sessions_user_id (user_id),
-    INDEX idx_user_sessions_expires_at (expires_at)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== 模型配置模块 ====================
@@ -121,9 +119,7 @@ CREATE TABLE orders (
     reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_orders_status (status),
-    INDEX idx_orders_created_at (created_at)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 订单明细表
@@ -142,8 +138,7 @@ CREATE TABLE order_items (
     review_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(order_id, line_number),
-    INDEX idx_order_items_mpn (mpn)
+    UNIQUE(order_id, line_number)
 );
 
 -- ==================== 审计日志模块 ====================
@@ -160,10 +155,7 @@ CREATE TABLE audit_logs (
     ip_address INET,
     user_agent TEXT,
     metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_audit_logs_user_id (user_id),
-    INDEX idx_audit_logs_resource (resource_type, resource_id),
-    INDEX idx_audit_logs_created_at (created_at)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== 系统配置模块 ====================
@@ -261,6 +253,10 @@ CREATE TRIGGER update_system_configs_updated_at
 
 -- ==================== 创建索引优化查询性能 ====================
 
+-- 用户会话索引
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_expires_at ON user_sessions(expires_at);
+
 -- 用户查询优化
 CREATE INDEX idx_users_email_lower ON users(LOWER(email));
 CREATE INDEX idx_users_role_active ON users(role_id, is_active);
@@ -268,9 +264,17 @@ CREATE INDEX idx_users_role_active ON users(role_id, is_active);
 -- 订单查询优化
 CREATE INDEX idx_orders_customer_email ON orders(customer_email);
 CREATE INDEX idx_orders_status_priority ON orders(status, priority);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
+
+-- 订单明细索引
+CREATE INDEX idx_order_items_mpn ON order_items(mpn);
 
 -- 审计日志查询优化
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
 
 -- 打印初始化完成信息
 SELECT '数据库核心表结构初始化完成' AS message;
