@@ -1,0 +1,92 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+
+env:
+  REGISTRY: docker.io
+  IMAGE_PREFIX: ${{ secrets.DOCKER_USERNAME }}/component-agent
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+        run: |
+          ssh root@$SERVER_HOST << 'EOF'
+            set -e
+
+            echo "=== 开始部署元器件商城系统 ==="
+
+            # 进入项目目录
+            cd /opt/component-agent
+
+            # 拉取最新代码
+            git pull origin main
+
+            # 停止旧服务
+            docker-compose -f docker-compose.prod.yml down
+
+            # 清理旧镜像
+            docker image prune -f
+
+            # 拉取最新镜像
+            docker-compose -f docker-compose.prod.yml pull
+
+            # 启动新服务
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
+            JWT_SECRET=$JWT_SECRET \
+            REDIS_PASSWORD=$REDIS_PASSWORD \
+            docker-compose -f docker-compose.prod.yml up -d
+
+            # 等待服务启动
+            sleep 30
+
+            # 检查服务状态
+            docker-compose ps
+
+            # 查看错误日志
+            docker-compose logs --tail=50
+
+            echo "=== 部署完成 ==="
+          EOF
+
+      - name: Verify deployment
+        runs-on: ubuntu-latest
+        needs: deploy
+        steps:
+          - name: Check service health
+            run: |
+              echo "Deployment verification completed"

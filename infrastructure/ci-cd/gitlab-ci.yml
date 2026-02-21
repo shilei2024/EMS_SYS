@@ -1,0 +1,329 @@
+# 电子元器件代理商增值系统 CI/CD 流水线
+
+stages:
+  - validate
+  - test
+  - build
+  - security
+  - deploy-dev
+  - deploy-staging
+  - deploy-prod
+
+variables:
+  DOCKER_IMAGE_PREFIX: "registry.example.com/component-agent"
+  KUBERNETES_NAMESPACE_DEV: "component-agent-dev"
+  KUBERNETES_NAMESPACE_STAGING: "component-agent-staging"
+  KUBERNETES_NAMESPACE_PROD: "component-agent-prod"
+
+# ==================== 通用配置 ====================
+.default_rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_TAG'
+
+# ==================== 代码验证阶段 ====================
+validate-python:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - echo "🔍 验证Python代码质量..."
+    - cd services/model-gateway
+    - pip install black isort ruff mypy
+    - black --check --diff .
+    - isort --check-only --diff .
+    - ruff check .
+    - mypy --ignore-missing-imports .
+  artifacts:
+    reports:
+      codequality: gl-code-quality.json
+  rules:
+    - changes:
+        - "services/model-gateway/**/*"
+      when: always
+
+validate-go:
+  stage: validate
+  image: golang:1.21-alpine
+  script:
+    - echo "🔍 验证Go代码质量..."
+    - cd services/auth-service
+    - go fmt ./...
+    - go vet ./...
+    - go mod tidy
+    - git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum 未同步" && exit 1)
+  rules:
+    - changes:
+        - "services/auth-service/**/*"
+      when: always
+
+validate-sql:
+  stage: validate
+  image: postgres:15-alpine
+  script:
+    - echo "🔍 验证SQL脚本..."
+    - cd databases/postgres/init-scripts
+    - for file in *.sql; do
+        echo "检查 $file"
+        psql -v ON_ERROR_STOP=1 -f "$file" -U postgres -h localhost -d postgres || exit 1
+      done
+  rules:
+    - changes:
+        - "databases/postgres/**/*"
+      when: always
+
+# ==================== 测试阶段 ====================
+test-python:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:15-alpine
+    - redis:7-alpine
+  variables:
+    POSTGRES_DB: test_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: password
+    REDIS_URL: redis://redis:6379/0
+  script:
+    - echo "🧪 运行Python测试..."
+    - cd services/model-gateway
+    - pip install -r requirements.txt
+    - pytest --cov=app --cov-report=xml --cov-report=html
+  artifacts:
+    reports:
+      junit: test-results/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: services/model-gateway/coverage.xml
+  coverage: '/^TOTAL.*\s+(\d+\%)$/'
+  rules:
+    - changes:
+        - "services/model-gateway/**/*"
+      when: always
+
+test-go:
+  stage: test
+  image: golang:1.21-alpine
+  services:
+    - postgres:15-alpine
+    - redis:7-alpine
+  variables:
+    POSTGRES_DB: test_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: password
+    REDIS_URL: redis://redis:6379/0
+  script:
+    - echo "🧪 运行Go测试..."
+    - cd services/auth-service
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go tool cover -func=coverage.out
+  artifacts:
+    reports:
+      junit: test-results/junit.xml
+  rules:
+    - changes:
+        - "services/auth-service/**/*"
+      when: always
+
+# ==================== 构建阶段 ====================
+build-model-gateway:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - echo "🏗️ 构建模型网关镜像..."
+    - cd services/model-gateway
+    - docker build -f Dockerfile.prod -t $DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA .
+    - docker tag $DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA $DOCKER_IMAGE_PREFIX/model-gateway:latest
+    - docker push $DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE_PREFIX/model-gateway:latest
+  artifacts:
+    paths:
+      - services/model-gateway/Dockerfile.prod
+  rules:
+    - changes:
+        - "services/model-gateway/**/*"
+      when: on_success
+
+build-auth-service:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - echo "🏗️ 构建认证服务镜像..."
+    - cd services/auth-service
+    - docker build -f Dockerfile.prod -t $DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA .
+    - docker tag $DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA $DOCKER_IMAGE_PREFIX/auth-service:latest
+    - docker push $DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE_PREFIX/auth-service:latest
+  artifacts:
+    paths:
+      - services/auth-service/Dockerfile.prod
+  rules:
+    - changes:
+        - "services/auth-service/**/*"
+      when: on_success
+
+# ==================== 安全扫描阶段 ====================
+security-scan:
+  stage: security
+  image: aquasec/trivy:latest
+  variables:
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+  script:
+    - echo "🛡️ 执行安全扫描..."
+    - trivy filesystem --severity HIGH,CRITICAL --exit-code 1 --format sarif --output gl-sast-report.sarif .
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA || true
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA || true
+  artifacts:
+    reports:
+      sast: gl-sast-report.sarif
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+      when: always
+
+secret-detection:
+  stage: security
+  image: gitlab/gitlab-secret-detection:latest
+  script:
+    - echo "🔒 检测敏感信息..."
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+      when: always
+
+# ==================== 部署到开发环境 ====================
+deploy-dev:
+  stage: deploy-dev
+  image: bitnami/kubectl:latest
+  environment:
+    name: development
+    url: https://dev.component-agent.example.com
+  script:
+    - echo "🚀 部署到开发环境..."
+    - kubectl config set-cluster k8s-dev --server=$K8S_DEV_SERVER --certificate-authority=/tmp/ca.crt
+    - kubectl config set-credentials k8s-dev --token=$K8S_DEV_TOKEN
+    - kubectl config set-context k8s-dev --cluster=k8s-dev --user=k8s-dev --namespace=$KUBERNETES_NAMESPACE_DEV
+    - kubectl config use-context k8s-dev
+    - |
+      # 更新镜像版本
+      kubectl set image deployment/model-gateway model-gateway=$DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA -n $KUBERNETES_NAMESPACE_DEV
+      kubectl set image deployment/auth-service auth-service=$DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA -n $KUBERNETES_NAMESPACE_DEV
+      # 等待部署完成
+      kubectl rollout status deployment/model-gateway -n $KUBERNETES_NAMESPACE_DEV --timeout=300s
+      kubectl rollout status deployment/auth-service -n $KUBERNETES_NAMESPACE_DEV --timeout=300s
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+
+# ==================== 部署到预发布环境 ====================
+deploy-staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  environment:
+    name: staging
+    url: https://staging.component-agent.example.com
+  script:
+    - echo "🚀 部署到预发布环境..."
+    - kubectl config set-cluster k8s-staging --server=$K8S_STAGING_SERVER --certificate-authority=/tmp/ca.crt
+    - kubectl config set-credentials k8s-staging --token=$K8S_STAGING_TOKEN
+    - kubectl config set-context k8s-staging --cluster=k8s-staging --user=k8s-staging --namespace=$KUBERNETES_NAMESPACE_STAGING
+    - kubectl config use-context k8s-staging
+    - |
+      # 更新镜像版本
+      kubectl set image deployment/model-gateway model-gateway=$DOCKER_IMAGE_PREFIX/model-gateway:$CI_COMMIT_SHA -n $KUBERNETES_NAMESPACE_STAGING
+      kubectl set image deployment/auth-service auth-service=$DOCKER_IMAGE_PREFIX/auth-service:$CI_COMMIT_SHA -n $KUBERNETES_NAMESPACE_STAGING
+      # 运行数据库迁移
+      kubectl exec -n $KUBERNETES_NAMESPACE_STAGING deployment/postgres -- psql -U postgres -d component_agent -f /docker-entrypoint-initdb.d/01-core-tables.sql
+      # 等待部署完成
+      kubectl rollout status deployment/model-gateway -n $KUBERNETES_NAMESPACE_STAGING --timeout=300s
+      kubectl rollout status deployment/auth-service -n $KUBERNETES_NAMESPACE_STAGING --timeout=300s
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: false
+
+# ==================== 部署到生产环境 ====================
+deploy-prod:
+  stage: deploy-prod
+  image: bitnami/kubectl:latest
+  environment:
+    name: production
+    url: https://component-agent.example.com
+  script:
+    - echo "🚀 部署到生产环境..."
+    - kubectl config set-cluster k8s-prod --server=$K8S_PROD_SERVER --certificate-authority=/tmp/ca.crt
+    - kubectl config set-credentials k8s-prod --token=$K8S_PROD_TOKEN
+    - kubectl config set-context k8s-prod --cluster=k8s-prod --user=k8s-prod --namespace=$KUBERNETES_NAMESPACE_PROD
+    - kubectl config use-context k8s-prod
+    - |
+      # 蓝绿部署策略
+      # 1. 部署新版本
+      kubectl apply -f kubernetes/production/ -n $KUBERNETES_NAMESPACE_PROD
+      # 2. 等待新版本就绪
+      kubectl rollout status deployment/model-gateway-v2 -n $KUBERNETES_NAMESPACE_PROD --timeout=300s
+      kubectl rollout status deployment/auth-service-v2 -n $KUBERNETES_NAMESPACE_PROD --timeout=300s
+      # 3. 切换流量
+      kubectl patch service/model-gateway -n $KUBERNETES_NAMESPACE_PROD -p '{"spec":{"selector":{"version":"v2"}}}'
+      kubectl patch service/auth-service -n $KUBERNETES_NAMESPACE_PROD -p '{"spec":{"selector":{"version":"v2"}}}'
+      # 4. 清理旧版本
+      kubectl delete deployment model-gateway-v1 auth-service-v1 -n $KUBERNETES_NAMESPACE_PROD
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+      allow_failure: false
+
+# ==================== 健康检查 ====================
+health-check:
+  stage: deploy-prod
+  image: curlimages/curl:latest
+  needs: ["deploy-prod"]
+  script:
+    - echo "🏥 执行健康检查..."
+    - |
+      for endpoint in "https://component-agent.example.com/health" "https://component-agent.example.com/api/v1/health"; do
+        echo "检查 $endpoint"
+        for i in {1..30}; do
+          if curl -f -s $endpoint > /dev/null; then
+            echo "✅ $endpoint 健康"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "❌ $endpoint 健康检查失败"
+            exit 1
+          fi
+          sleep 10
+        done
+      done
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+
+# ==================== 清理阶段 ====================
+cleanup:
+  stage: .post
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo "🧹 清理旧镜像..."
+    - docker system prune -f
+  when: always

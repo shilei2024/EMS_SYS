@@ -1,0 +1,21 @@
+{
+  "requires": true,
+  "tools": {
+    "jest": true,
+    "vitest": true,
+    "cypress": true
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": ["@testing-library/jest-dom"],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "testMatch": ["**/__tests__/**/*.test.[jt]s?(x)"]
+  },
+  "vitest": {
+    "environment": "jsdom",
+    "globals": true,
+    "setupFiles": ["./src/test/setup.ts"]
+  }
+}

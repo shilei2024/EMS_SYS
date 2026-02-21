@@ -1,0 +1,154 @@
+# GitLab CI/CD 流水线配置
+# 用于元器件商城外部门户的自动化构建和部署
+
+stages:
+  - lint
+  - test
+  - build
+  - docker
+  - deploy
+
+# 变量定义
+variables:
+  NODE_VERSION: "20"
+  DOCKER_REGISTRY: "registry.example.com"
+  APP_NAME: "external-portal"
+  K8S_NAMESPACE: "production"
+
+# 缓存配置
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+    - node_modules/
+
+# 代码检查
+lint:
+  stage: lint
+  image: node:${NODE_VERSION}-alpine
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run lint
+  rules:
+    - changes:
+        - frontend/external-portal/**/*
+
+# 单元测试
+unit-test:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run test
+  rules:
+    - changes:
+        - frontend/external-portal/**/*
+
+# 构建应用
+build:
+  stage: build
+  image: node:${NODE_VERSION}-alpine
+  script:
+    - cd frontend/external-portal
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/external-portal/.output
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# Docker 构建和推送
+docker-build:
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY}
+  script:
+    - cd frontend/external-portal
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        TAG="latest"
+      elif [ "$CI_COMMIT_BRANCH" == "develop" ]; then
+        TAG="develop"
+      else
+        TAG="$CI_COMMIT_SHORT_SHA"
+      fi
+    - docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${TAG} --build-arg NUXT_PUBLIC_API_BASE=${API_BASE_URL} .
+    - docker push ${DOCKER_REGISTRY}/${APP_NAME}:${TAG}
+    - docker tag ${DOCKER_REGISTRY}/${APP_NAME}:${TAG} ${DOCKER_REGISTRY}/${APP_NAME}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKER_REGISTRY}/${APP_NAME}:${CI_COMMIT_SHORT_SHA}
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_TAG
+
+# 部署到 Kubernetes
+deploy-k8s:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "${KUBE_CONFIG}" | base64 -d > ~/.kube/config
+    - chmod 600 ~/.kube/config
+  script:
+    - kubectl config use-context ${K8S_CONTEXT}
+    - kubectl set image deployment/${APP_NAME} ${APP_NAME}=${DOCKER_REGISTRY}/${APP_NAME}:${CI_COMMIT_SHORT_SHA} -n ${K8S_NAMESPACE}
+    - kubectl rollout status deployment/${APP_NAME} -n ${K8S_NAMESPACE}
+  environment:
+    name: production
+    url: https://portal.example.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: manual
+  dependencies:
+    - docker-build
+
+# 部署到开发环境
+deploy-dev:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "${KUBE_CONFIG_DEV}" | base64 -d > ~/.kube/config
+    - chmod 600 ~/.kube/config
+  script:
+    - kubectl config use-context ${K8S_CONTEXT_DEV}
+    - kubectl set image deployment/${APP_NAME}-dev ${APP_NAME}=${DOCKER_REGISTRY}/${APP_NAME}:${CI_COMMIT_SHORT_SHA} -n development
+    - kubectl rollout status deployment/${APP_NAME}-dev -n development
+  environment:
+    name: development
+    url: https://dev.portal.example.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+  dependencies:
+    - docker-build
+
+# 通知（可选）
+notify:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - |
+      if [ "$CI_JOB_STATUS" == "success" ]; then
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{\"text\":\"✅ 部署成功！${CI_PROJECT_NAME} ${CI_COMMIT_SHORT_SHA}\"}" \
+          ${WEBHOOK_URL}
+      else
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{\"text\":\"❌ 部署失败！${CI_PROJECT_NAME} ${CI_COMMIT_SHORT_SHA}\"}" \
+          ${WEBHOOK_URL}
+      fi
+  rules:
+    - when: always
+  when: on_failure

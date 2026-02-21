@@ -1,0 +1,236 @@
+# 电子元器件代理商增值系统告警规则
+
+groups:
+  # ==================== 基础设施告警 ====================
+  - name: infrastructure
+    rules:
+      # 节点内存使用率过高
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "高内存使用率 (实例 {{ $labels.instance }})"
+          description: "内存使用率超过85% (当前值: {{ $value }}%)"
+
+      # 节点CPU使用率过高
+      - alert: HighCPUUsage
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "高CPU使用率 (实例 {{ $labels.instance }})"
+          description: "CPU使用率超过80% (当前值: {{ $value }}%)"
+
+      # 磁盘空间不足
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint!~"^/run.*|^/sys.*|^/dev.*|^/var/lib/docker.*"} / node_filesystem_size_bytes{mountpoint!~"^/run.*|^/sys.*|^/dev.*|^/var/lib/docker.*"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          service: infrastructure
+        annotations:
+          summary: "磁盘空间不足 (实例 {{ $labels.instance }} 挂载点 {{ $labels.mountpoint }})"
+          description: "磁盘空间剩余不足10% (当前值: {{ $value }}%)"
+
+  # ==================== 数据库告警 ====================
+  - name: database
+    rules:
+      # PostgreSQL连接数过高
+      - alert: PostgreSQLHighConnections
+        expr: pg_stat_database_numbackends{datname="component_agent"} > 50
+        for: 2m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "PostgreSQL连接数过高"
+          description: "数据库连接数超过50 (当前值: {{ $value }})"
+
+      # PostgreSQL死锁
+      - alert: PostgreSQLDeadlocks
+        expr: increase(pg_stat_database_deadlocks{datname="component_agent"}[5m]) > 0
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "PostgreSQL检测到死锁"
+          description: "5分钟内检测到 {{ $value }} 个死锁"
+
+      # Redis内存使用率过高
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis内存使用率过高"
+          description: "Redis内存使用率超过85% (当前值: {{ $value }}%)"
+
+  # ==================== 微服务告警 ====================
+  - name: microservices
+    rules:
+      # 服务不可用
+      - alert: ServiceDown
+        expr: up{job=~"model-gateway|auth-service|order-service|kg-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "服务 {{ $labels.job }} 不可用"
+          description: "服务 {{ $labels.job }} (实例 {{ $labels.instance }}) 已停机超过1分钟"
+
+      # 高错误率
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "高错误率 (服务 {{ $labels.job }})"
+          description: "HTTP 5xx错误率超过5% (当前值: {{ $value }}%)"
+
+      # 高延迟
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "高延迟 (服务 {{ $labels.job }})"
+          description: "95%分位延迟超过1秒 (当前值: {{ $value }}秒)"
+
+      # 模型网关 - 无健康提供商
+      - alert: ModelGatewayNoHealthyProvider
+        expr: model_gateway_healthy_providers_total == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: model-gateway
+        annotations:
+          summary: "模型网关无健康提供商"
+          description: "所有模型提供商都不可用"
+
+      # 模型网关 - 高失败率
+      - alert: ModelGatewayHighFailureRate
+        expr: rate(model_gateway_request_failures_total[5m]) / rate(model_gateway_requests_total[5m]) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: model-gateway
+        annotations:
+          summary: "模型网关高失败率"
+          description: "模型请求失败率超过10% (当前值: {{ $value }}%)"
+
+  # ==================== 业务指标告警 ====================
+  - name: business
+    rules:
+      # 订单处理积压
+      - alert: OrderBacklog
+        expr: sum(order_queue_length) by (service) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "订单处理积压"
+          description: "订单队列长度超过1000 (当前值: {{ $value }})"
+
+      # OCR处理失败率高
+      - alert: OCRHighFailureRate
+        expr: rate(ocr_processing_failures_total[5m]) / rate(ocr_processing_requests_total[5m]) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "OCR处理失败率高"
+          description: "OCR处理失败率超过20% (当前值: {{ $value }}%)"
+
+      # 知识图谱查询失败
+      - alert: KnowledgeGraphQueryFailure
+        expr: rate(kg_query_failures_total[5m]) / rate(kg_query_requests_total[5m]) * 100 > 15
+        for: 5m
+        labels:
+          severity: warning
+          service: kg-service
+        annotations:
+          summary: "知识图谱查询失败率高"
+          description: "知识图谱查询失败率超过15% (当前值: {{ $value }}%)"
+
+  # ==================== 安全告警 ====================
+  - name: security
+    rules:
+      # 异常登录尝试
+      - alert: AbnormalLoginAttempts
+        expr: rate(auth_failed_login_attempts_total[5m]) > 10
+        labels:
+          severity: warning
+          service: auth-service
+        annotations:
+          summary: "异常登录尝试"
+          description: "5分钟内检测到超过10次失败登录尝试 (当前值: {{ $value }})"
+
+      # 暴力破解攻击
+      - alert: BruteForceAttack
+        expr: rate(auth_failed_login_attempts_total[10m]) > 50
+        labels:
+          severity: critical
+          service: auth-service
+        annotations:
+          summary: "暴力破解攻击检测"
+          description: "10分钟内检测到超过50次失败登录尝试 (当前值: {{ $value }})"
+
+      # API异常访问模式
+      - alert: APIAbnormalAccess
+        expr: stddev(rate(http_requests_total[5m])) by (endpoint) > 0.5 * avg(rate(http_requests_total[5m])) by (endpoint)
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "API异常访问模式 (端点 {{ $labels.endpoint }})"
+          description: "API访问模式出现异常波动"
+
+  # ==================== 合成监控告警 ====================
+  - name: synthetic
+    rules:
+      # 关键端点健康检查失败
+      - alert: CriticalEndpointDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          endpoint: "{{ $labels.instance }}"
+        annotations:
+          summary: "关键端点不可用 ({{ $labels.instance }})"
+          description: "关键端点健康检查失败超过2分钟"
+
+      # SSL证书即将过期
+      - alert: SSLCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30  # 30天
+        labels:
+          severity: warning
+          endpoint: "{{ $labels.instance }}"
+        annotations:
+          summary: "SSL证书即将过期 ({{ $labels.instance }})"
+          description: "SSL证书将在30天内过期 (剩余: {{ $value | humanizeDuration }})"
+
+      # 服务响应时间过长
+      - alert: ServiceResponseTimeout
+        expr: probe_duration_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          endpoint: "{{ $labels.instance }}"
+        annotations:
+          summary: "服务响应时间过长 ({{ $labels.instance }})"
+          description: "服务响应时间超过5秒 (当前值: {{ $value }}秒)"

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(go build:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(dir:*)",
+      "Bash(less:*)",
+      "Bash(powershell -Command \"Get-Content ''D:\\\\claude-project\\\\项目需求 PRD.md'' -Raw\")",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose config:*)",
+      "Bash(npm install)",
+      "Bash(curl:*)"
+    ]
+  }
+}

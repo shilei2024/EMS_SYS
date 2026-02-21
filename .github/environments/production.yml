@@ -1,0 +1,22 @@
+name: Production
+
+# 生产环境配置
+# 在 GitHub Settings → Environments 中配置以下 Secrets:
+#
+# Required Secrets:
+# - SERVER_HOST: 服务器 IP 地址
+# - SERVER_SSH_KEY: SSH 私钥
+# - DOCKER_USERNAME: Docker Hub 用户名
+# - DOCKER_PASSWORD: Docker Hub 密码/Access Token
+#
+# Optional Secrets (用于自动部署):
+# - POSTGRES_PASSWORD: PostgreSQL 密码
+# - JWT_SECRET: JWT 密钥
+# - REDIS_PASSWORD: Redis 密码
+
+protection_rules:
+  # 部署前需要审查者批准
+  required_reviewers: 1
+
+# 部署超时时间（分钟）
+wait_timer: 30

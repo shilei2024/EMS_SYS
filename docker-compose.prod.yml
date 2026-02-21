@@ -1,0 +1,484 @@
+version: '3.8'
+
+# 生产环境 Docker Compose 配置
+# 用法：docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # ==================== 数据库服务 ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: component-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: component_agent
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./databases/postgres/init-scripts:/docker-entrypoint-initdb.d:ro
+    command: >
+      postgres
+      -c log_statement=ddl
+      -c log_min_duration_statement=1000
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=16MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: component-neo4j
+    restart: always
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/password}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_dbms_memory_pagecache_size: "512M"
+      NEO4J_dbms_memory_heap_max__size: "1G"
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    container_name: component-redis
+    restart: always
+    command: redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ==================== 对象存储 ====================
+  minio:
+    image: minio/minio:latest
+    container_name: component-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_DEFAULT_BUCKETS: "datasheets,orders,exports"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ==================== 监控服务 ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: component-prometheus
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: component-grafana
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+    ports:
+      - "3003:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ==================== 微服务 ====================
+  model-gateway:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-model-gateway:main
+    container_name: component-model-gateway
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PORT: "8000"
+      ENVIRONMENT: "production"
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+      replicas: 2
+
+  auth-service:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-auth-service:main
+    container_name: component-auth-service
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      SERVER_PORT: "8001"
+      ENVIRONMENT: "production"
+    expose:
+      - "8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+      replicas: 2
+
+  order-service:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-order-service:main
+    container_name: component-order-service
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/1"
+      PADDLEOCR_ENDPOINT: ${PADDLEOCR_ENDPOINT:-http://paddleocr:8866}
+      LLM_GATEWAY_ENDPOINT: "http://model-gateway:8000"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: "orders"
+      AUTH_SERVICE_URL: "http://auth-service:8001"
+      PORT: "8004"
+      ENVIRONMENT: "production"
+    expose:
+      - "8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+      replicas: 2
+
+  kg-service:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-kg-service:main
+    container_name: component-kg-service
+    restart: always
+    environment:
+      NEO4J_URI: "bolt://neo4j:7687"
+      NEO4J_USER: "neo4j"
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password}
+      LLM_GATEWAY_ENDPOINT: "http://model-gateway:8000"
+      AUTH_SERVICE_URL: "http://auth-service:8001"
+      PORT: "8005"
+      ENVIRONMENT: "production"
+    expose:
+      - "8005"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  finance-service:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-finance-service:main
+    container_name: component-finance-service
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      SERVER_PORT: "8002"
+      ENVIRONMENT: "production"
+    expose:
+      - "8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  inventory-service:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-inventory-service:main
+    container_name: component-inventory-service
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/2"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      SERVER_PORT: "8003"
+      ENVIRONMENT: "production"
+    expose:
+      - "8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ==================== 前端服务 ====================
+  external-portal:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-external-portal:main
+    container_name: component-external-portal
+    restart: always
+    environment:
+      NUXT_PUBLIC_API_BASE: "http://nginx:8001"
+      NODE_ENV: "production"
+    expose:
+      - "3000"
+    depends_on:
+      - nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+      replicas: 2
+
+  internal-admin:
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-internal-admin:main
+    container_name: component-internal-admin
+    restart: always
+    environment:
+      VITE_API_BASE: "http://nginx:8001"
+      NODE_ENV: "production"
+    expose:
+      - "3001"
+    depends_on:
+      - nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+      replicas: 1
+
+  # ==================== API 网关 (Nginx) ====================
+  nginx:
+    image: nginx:alpine
+    container_name: component-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - external-portal
+      - internal-admin
+      - auth-service
+      - model-gateway
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ==================== 日志收集 ====================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: component-elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: component-kibana
+    restart: always
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+# ==================== 数据卷 ====================
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+
+# ==================== 网络配置 ====================
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

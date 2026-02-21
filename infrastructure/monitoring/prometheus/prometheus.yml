@@ -1,0 +1,204 @@
+# 电子元器件代理商增值系统 Prometheus 监控配置
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'component-agent'
+    environment: '${ENVIRONMENT:-development}'
+
+# 告警规则文件
+rule_files:
+  - 'alerts.yml'
+  - 'recording_rules.yml'
+
+# 告警管理器配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# 抓取配置
+scrape_configs:
+  # Prometheus自身指标
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 节点指标 (Node Exporter)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Docker指标 (cAdvisor)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Redis指标
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: /scrape
+    params:
+      target: [redis:6379]
+
+  # PostgreSQL指标
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # 模型网关指标
+  - job_name: 'model-gateway'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['model-gateway:8000']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: model-gateway:8000
+
+  # 认证服务指标
+  - job_name: 'auth-service'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['auth-service:8001']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: auth-service:8001
+
+  # 订单服务指标
+  - job_name: 'order-service'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['order-service:8002']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: order-service:8002
+
+  # 知识图谱服务指标
+  - job_name: 'kg-service'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['kg-service:8003']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: kg-service:8003
+
+  # Blackbox探测 (HTTP/HTTPS/TCP/ICMP)
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://model-gateway:8000/health
+        - http://auth-service:8001/api/v1/health
+        - http://order-service:8002/health
+        - http://kg-service:8003/health
+        - tcp://postgres:5432
+        - tcp://redis:6379
+        - tcp://neo4j:7687
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Kubernetes指标
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  # Kubernetes节点
+  - job_name: 'kubernetes-nodes'
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics
+
+  # Kubernetes服务
+  - job_name: 'kubernetes-service-endpoints'
+    kubernetes_sd_configs:
+      - role: endpoints
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+        action: replace
+        target_label: __scheme__
+        regex: (https?)
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_service_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_service_name]
+        action: replace
+        target_label: kubernetes_name
+
+# 远程写入配置 (可选，用于长期存储)
+remote_write:
+  - url: "https://prometheus-long-term-storage.example.com/api/v1/write"
+    basic_auth:
+      username: "${PROMETHEUS_LTS_USERNAME}"
+      password: "${PROMETHEUS_LTS_PASSWORD}"
+    queue_config:
+      max_samples_per_send: 1000
+      capacity: 5000
+      max_shards: 200
+      min_shards: 1
+
+# 远程读取配置 (可选)
+remote_read:
+  - url: "https://prometheus-long-term-storage.example.com/api/v1/read"
+    basic_auth:
+      username: "${PROMETHEUS_LTS_USERNAME}"
+      password: "${PROMETHEUS_LTS_PASSWORD}"
+    read_recent: true

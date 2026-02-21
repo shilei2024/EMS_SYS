@@ -1,0 +1,42 @@
+# 电子元器件代理商增值系统 - Kubernetes基础配置
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: component-agent
+
+resources:
+  # 配置
+  - configmap.yaml
+  - secret.yaml
+
+  # 服务
+  - services/model-gateway.yaml
+  - services/auth-service.yaml
+
+  # 网络
+  - network-policy.yaml
+  - ingress.yaml
+
+commonLabels:
+  app: component-agent
+  version: v1.0.0
+
+images:
+  - name: model-gateway
+    newName: registry.example.com/component-agent/model-gateway
+    newTag: latest
+
+  - name: auth-service
+    newName: registry.example.com/component-agent/auth-service
+    newTag: latest
+
+replicas:
+  - name: model-gateway
+    count: 2
+
+  - name: auth-service
+    count: 2
+
+patchesStrategicMerge:
+  - patches/resource-limits.yaml
+  - patches/security-context.yaml

@@ -1,0 +1,83 @@
+name: 🐛 Bug 报告
+description: 报告一个问题
+title: "[Bug]: <简短描述>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您报告问题！请填写以下信息。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰简洁地描述问题
+      placeholder: 描述问题...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 详细列出如何复现问题
+      placeholder: |
+        1. 访问 '...'
+        2. 点击 '...'
+        3. 滚动到 '...'
+        4. 发现问题
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 应该发生什么
+      placeholder: 描述期望的行为...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么
+      placeholder: 描述实际的行为...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 严重程度
+      description: 选择问题的严重程度
+      options:
+        - 低 - 不影响使用
+        - 中 - 部分功能受影响
+        - 高 - 主要功能无法使用
+        - 严重 - 系统崩溃
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 提供环境信息
+      placeholder: |
+        - OS: [e.g. Ubuntu 20.04]
+        - 浏览器：[e.g. Chrome 120]
+        - 版本：[e.g. v4.0.0]
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: 粘贴相关日志（如有）
+      render: shell
+    validations:
+      required: false
