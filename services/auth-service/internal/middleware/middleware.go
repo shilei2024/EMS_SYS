@@ -108,11 +108,15 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		}
 
 		// 将用户信息存入上下文
-		if userID, ok := claims["user_id"]; ok {
+		// JWT token 中使用 'sub' 字段存储用户 ID
+		if userID, ok := claims["sub"]; ok {
 			c.Set("user_id", userID)
 		}
 		if role, ok := claims["role"]; ok {
 			c.Set("role", role)
+		}
+		if name, ok := claims["name"]; ok {
+			c.Set("user_name", name)
 		}
 
 		c.Next()

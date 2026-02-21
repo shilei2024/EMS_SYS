@@ -726,7 +726,7 @@ func (h *AuthHandler) cacheUserSession(userID, sessionID string, ttl time.Durati
 		return err
 	}
 
-	return h.redis.SetEX(ctx, key, data, ttl).Err()
+	return h.redis.Set(ctx, key, data, ttl).Err()
 }
 
 // getUserSession 获取用户会话
@@ -770,7 +770,7 @@ func (h *AuthHandler) addTokenToBlacklist(tokenID string, ttl time.Duration) err
 
 	ctx := context.Background()
 	key := fmt.Sprintf("token:blacklist:%s", tokenID)
-	return h.redis.SetEX(ctx, key, "1", ttl).Err()
+	return h.redis.Set(ctx, key, "1", ttl).Err()
 }
 
 // isTokenBlacklisted 检查令牌是否在黑名单中
@@ -811,7 +811,7 @@ func (h *AuthHandler) cacheLoginFailed(username string, maxAttempts int, lockout
 	// 如果达到最大失败次数，锁定账户
 	if int(count) >= maxAttempts {
 		lockKey := fmt.Sprintf("account:locked:%s", username)
-		h.redis.SetEX(ctx, lockKey, "1", lockoutDuration)
+		h.redis.Set(ctx, lockKey, "1", lockoutDuration)
 	}
 
 	return nil
@@ -888,7 +888,7 @@ func (h *AuthHandler) cacheUserInfo(userID string, userInfo map[string]interface
 		return err
 	}
 
-	return h.redis.SetEX(ctx, key, data, ttl).Err()
+	return h.redis.Set(ctx, key, data, ttl).Err()
 }
 
 // getUserInfo 获取缓存的用户信息

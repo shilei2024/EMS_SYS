@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,18 +18,14 @@ import (
 )
 
 func main() {
-	// 初始化配置
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
+
+	// 加载配置
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Fatal("Failed to load configuration", zap.Error(err))
 	}
-
-	// 初始化日志
-	logger, err := initLogger(cfg)
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer logger.Sync()
 
 	// 初始化数据库连接
 	db, err := database.NewConnection(cfg.Database)
@@ -40,29 +35,27 @@ func main() {
 	defer db.Close()
 
 	// 运行数据库迁移
-	if err := database.RunMigrations(db); err != nil {
+	if err := database.RunMigrations(db.DB); err != nil {
 		logger.Fatal("Failed to run database migrations", zap.Error(err))
 	}
 
-	// 设置Gin模式
+	// 设置 Gin 模式
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
 		gin.SetMode(gin.DebugMode)
 	}
 
-	// 创建Gin引擎
+	// 创建 Gin 引擎
 	router := gin.New()
 
 	// 添加中间件
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger))
-	router.Use(middleware.CORS(cfg.CORS))
+	router.Use(middleware.CORS(cfg.CORS.AllowOrigins, cfg.CORS.AllowMethods, cfg.CORS.AllowHeaders))
 
 	// 初始化处理器
-	authHandler := handlers.NewAuthHandler(db, cfg, logger)
-	userHandler := handlers.NewUserHandler(db, cfg, logger)
-	roleHandler := handlers.NewRoleHandler(db, cfg, logger)
+	authHandler := handlers.NewAuthHandler(db.DB, cfg, logger)
 
 	// 公开路由（无需认证）
 	public := router.Group("/api/v1")
@@ -79,29 +72,10 @@ func main() {
 	protected := router.Group("/api/v1")
 	protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 	{
-		// 用户管理
-		protected.GET("/users", userHandler.ListUsers)
-		protected.GET("/users/:id", userHandler.GetUser)
-		protected.PUT("/users/:id", userHandler.UpdateUser)
-		protected.DELETE("/users/:id", userHandler.DeleteUser)
-		protected.PUT("/users/:id/password", userHandler.ChangePassword)
-		protected.PUT("/users/:id/status", userHandler.UpdateStatus)
-
-		// 角色管理
-		protected.GET("/roles", roleHandler.ListRoles)
-		protected.GET("/roles/:id", roleHandler.GetRole)
-		protected.POST("/roles", roleHandler.CreateRole)
-		protected.PUT("/roles/:id", roleHandler.UpdateRole)
-		protected.DELETE("/roles/:id", roleHandler.DeleteRole)
-
 		// 会话管理
 		protected.GET("/sessions", authHandler.ListSessions)
 		protected.DELETE("/sessions/:id", authHandler.RevokeSession)
 		protected.POST("/logout", authHandler.Logout)
-
-		// 个人资料
-		protected.GET("/profile", userHandler.GetProfile)
-		protected.PUT("/profile", userHandler.UpdateProfile)
 	}
 
 	// 启动服务器
@@ -120,7 +94,7 @@ func main() {
 		}
 	}()
 
-	logger.Info("Server started successfully",
+	logger.Info("Auth service started successfully",
 		zap.String("address", srv.Addr),
 		zap.String("environment", cfg.Environment),
 	)
@@ -132,28 +106,20 @@ func main() {
 
 	logger.Info("Shutting down server...")
 
-	// 给服务器5秒时间完成现有请求
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Server forced to shutdown", zap.Error(err))
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
-
-	logger.Info("Server exited properly")
 }
 
-func initLogger(cfg *config.Config) (*zap.Logger, error) {
-	if cfg.Environment == "production" {
-		return zap.NewProduction()
-	}
-	return zap.NewDevelopment()
-}
-
+// healthCheck 健康检查端点
 func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "healthy",
 		"service":   "auth-service",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version":   "1.0.0",
+		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
