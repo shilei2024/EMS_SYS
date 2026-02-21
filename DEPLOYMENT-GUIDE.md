@@ -10,7 +10,7 @@
 2. [GitHub 代码托管](#github 代码托管)
 3. [云服务器准备](#云服务器准备)
 4. [Docker 环境安装](#docker 环境安装)
-5. [部署方式一：Docker Compose](#部署方式一 docker-compose)
+5. [部署方式一：Docker Compose](#部署方式一-docker-compose)
 6. [部署方式二：Kubernetes](#部署方式二 kubernetes)
 7. [SSL/HTTPS 配置](#sslhttps 配置)
 8. [CI/CD自动部署](#cicd 自动部署)
@@ -56,7 +56,7 @@ git add .
 git commit -m "feat: initial commit - 元器件商城系统 v4.0.0"
 
 # 4. 添加 GitHub 远程仓库（替换为您的仓库地址）
-git remote add origin https://github.com/YOUR_USERNAME/component-agent.git
+git remote add origin https://github.com/YOUR_USERNAME/EMS_SYS.git
 
 # 5. 推送到 GitHub
 git branch -M main
@@ -128,13 +128,25 @@ yum install -y curl git vim wget firewalld
 
 ## Docker 环境安装
 
-### 4.1 安装 Docker
+### ⚠️ 国内服务器重要提示
+
+由于网络原因，建议使用国内镜像源安装 Docker。如遇 `Connection reset by peer` 错误，请使用备用方案。
+
+### 4.1 方式一：使用国内镜像安装（推荐）
 
 ```bash
-# 一键安装 Docker
-curl -fsSL https://get.docker.com | sh -s docker
+# 设置国内镜像源
+export DOWNLOAD_URL=https://mirrors.aliyun.com/docker-ce
 
-# 启动 Docker 并设置开机自启
+# 添加 Docker 仓库
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | apt-key add -
+add-apt-repository "deb [arch=amd64] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
+
+# 安装 Docker
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io
+
+# 启动 Docker
 systemctl enable docker
 systemctl start docker
 
@@ -142,11 +154,63 @@ systemctl start docker
 docker --version
 ```
 
-### 4.2 安装 Docker Compose
+### 4.2 方式二：使用 DaoCloud 镜像（备用）
 
 ```bash
-# 下载 Docker Compose v2.24.0
-curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+# 使用 DaoCloud 镜像脚本
+curl -sSL https://get.daocloud.io/docker | sh
+
+# 或使用腾讯云镜像
+curl -fsSL https://docker-installation.txstc55.workers.dev/install.sh | sh
+```
+
+### 4.3 方式三：手动下载安装（最终方案）
+
+如果以上都失败，手动下载安装：
+
+```bash
+# 下载 Docker 二进制文件（使用国内镜像）
+wget https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-24.0.7.tgz
+
+# 解压
+tar -xzf docker-24.0.7.tgz
+cp docker/* /usr/bin/
+
+# 创建 systemd 服务
+cat > /etc/systemd/system/docker.service <<EOF
+[Unit]
+Description=Docker Application Container Engine
+After=network-online.target firewalld.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/dockerd
+ExecReload=/bin/kill -s HUP \$MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动 Docker
+systemctl daemon-reload
+systemctl enable docker
+systemctl start docker
+
+# 验证
+docker --version
+```
+
+### 4.4 安装 Docker Compose
+
+```bash
+# 使用国内镜像下载 Docker Compose
+curl -L "https://ghproxy.com/https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+# 或者使用 DaoCloud 镜像
+curl -L "https://cdn.daocloud.io/docker-compose/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 
 # 添加执行权限
 chmod +x /usr/local/bin/docker-compose
@@ -155,25 +219,36 @@ chmod +x /usr/local/bin/docker-compose
 docker-compose --version
 ```
 
-### 4.3 配置 Docker 镜像加速（可选）
+### 4.5 配置 Docker 镜像加速（重要）
 
 ```bash
-# 创建/修改 Docker 配置
+# 创建 Docker 配置目录
 mkdir -p /etc/docker
+
+# 配置国内镜像源
 cat > /etc/docker/daemon.json <<EOF
 {
   "registry-mirrors": [
-    "https://docker.mirrors.ustc.edu.cn",
-    "https://registry.cn-hangzhou.aliyuncs.com"
+    "https://docker.m.daocloud.io",
+    "https://docker.1panel.live",
+    "https://hub.rat.dev",
+    "https://dhub.kubesre.xyz"
   ],
-  "exec-ops": true,
-  "ipv6": false
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
 }
 EOF
 
 # 重启 Docker
 systemctl daemon-reload
 systemctl restart docker
+
+# 验证配置
+docker info | grep -A 5 "Registry Mirrors"
 ```
 
 ---
@@ -182,11 +257,13 @@ systemctl restart docker
 
 ### 5.1 克隆代码到服务器
 
+> **注意**: 如果您在 GitHub 上使用了不同的仓库名称，请将 `EMS_SYS` 替换为您的实际仓库名称。克隆后的目录名称也会相应改变。
+
 ```bash
 # 在服务器上执行
 cd /opt
-git clone https://github.com/YOUR_USERNAME/component-agent.git
-cd component-agent
+git clone https://github.com/YOUR_USERNAME/EMS_SYS.git
+cd EMS_SYS
 ```
 
 ### 5.2 配置环境变量
@@ -235,16 +312,16 @@ CORS_ALLOW_ORIGINS=https://portal.your-domain.com,https://admin.your-domain.com
 
 ```bash
 # 启动所有服务
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # 查看服务状态
-docker-compose ps
+docker compose ps
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
 
 # 停止所有服务
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down
 ```
 
 ### 5.4 服务端口说明
@@ -270,10 +347,10 @@ docker-compose -f docker-compose.prod.yml down
 
 ```bash
 # 查看数据库日志确认初始化成功
-docker-compose logs postgres
+docker compose logs postgres
 
 # 进入数据库验证
-docker-compose exec postgres psql -U postgres -d component_agent -c "\dt"
+docker compose exec postgres psql -U postgres -d component_agent -c "\dt"
 ```
 
 ---
@@ -293,7 +370,7 @@ kubectl get nodes
 ### 6.2 部署应用
 
 ```bash
-cd /opt/component-agent
+cd /opt/EMS_SYS
 
 # 应用 Kubernetes 配置
 kubectl apply -k kubernetes/overlays/production
@@ -445,22 +522,22 @@ http://your-server-ip:5601
 
 ```bash
 # 查看所有服务状态
-docker-compose ps
+docker compose ps
 
 # 重启单个服务
-docker-compose restart auth-service
+docker compose restart auth-service
 
 # 查看服务日志
-docker-compose logs -f order-service
+docker compose logs -f order-service
 
 # 进入容器
-docker-compose exec postgres bash
+docker compose exec postgres bash
 
 # 数据库备份
-docker-compose exec postgres pg_dump -U postgres component_agent > backup.sql
+docker compose exec postgres pg_dump -U postgres component_agent > backup.sql
 
 # 数据库恢复
-docker-compose exec -T postgres psql -U postgres component_agent < backup.sql
+docker compose exec -T postgres psql -U postgres component_agent < backup.sql
 
 # 清理无用镜像
 docker image prune -f
@@ -473,24 +550,78 @@ docker system df
 
 ```bash
 # 查看实时日志
-docker-compose logs -f
+docker compose logs -f
 
 # 查看最近 100 行日志
-docker-compose logs --tail=100
+docker compose logs --tail=100
 
 # 导出日志到文件
-docker-compose logs > all-logs.txt
+docker compose logs > all-logs.txt
 ```
 
 ---
 
 ## 常见问题
 
-### Q1: 服务启动失败
+### Q1: Docker 安装失败 - Connection reset by peer
+
+**问题**: 国内访问 Docker 官方源网络问题
+
+**解决方案**:
+
+```bash
+# 方案 1: 使用阿里云镜像
+export DOWNLOAD_URL=https://mirrors.aliyun.com/docker-ce
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | apt-key add -
+add-apt-repository "deb [arch=amd64] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
+apt update && apt install -y docker-ce
+
+# 方案 2: 使用 DaoCloud 镜像
+curl -sSL https://get.daocloud.io/docker | sh
+
+# 方案 3: 手动下载
+wget https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-24.0.7.tgz
+tar -xzf docker-24.0.7.tgz
+cp docker/* /usr/bin/
+```
+
+### Q2: Docker Compose 下载失败
+
+**问题**: GitHub 连接超时
+
+**解决方案**:
+
+```bash
+# 使用国内镜像
+curl -L "https://cdn.daocloud.io/docker-compose/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+```
+
+### Q3: Docker 镜像拉取失败
+
+**问题**: Docker Hub 连接超时
+
+**解决方案**:
+
+```bash
+# 配置镜像加速
+cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.1panel.live",
+    "https://hub.rat.dev"
+  ]
+}
+EOF
+systemctl restart docker
+```
+
+### Q4: 服务启动失败
 
 ```bash
 # 查看详细日志
-docker-compose logs [service-name]
+docker compose logs [service-name]
 
 # 检查资源使用
 docker stats
@@ -499,20 +630,20 @@ docker stats
 netstat -tulpn | grep [port]
 ```
 
-### Q2: 数据库连接失败
+### Q5: 数据库连接失败
 
 ```bash
 # 检查数据库是否运行
-docker-compose ps postgres
+docker compose ps postgres
 
 # 验证连接
-docker-compose exec postgres psql -U postgres -c "SELECT 1"
+docker compose exec postgres psql -U postgres -c "SELECT 1"
 
 # 重启数据库
-docker-compose restart postgres
+docker compose restart postgres
 ```
 
-### Q3: 内存不足
+### Q6: 内存不足
 
 ```bash
 # 限制服务内存（docker-compose.yml）
@@ -526,7 +657,7 @@ services:
           memory: 256M
 ```
 
-### Q4: SSL 证书续期
+### Q7: SSL 证书续期
 
 ```bash
 # 手动续期
@@ -552,10 +683,10 @@ DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p $BACKUP_DIR
 
 # 备份 PostgreSQL
-docker-compose exec -T postgres pg_dump -U postgres component_agent | gzip > $BACKUP_DIR/db_$DATE.sql.gz
+docker compose exec -T postgres pg_dump -U postgres component_agent | gzip > $BACKUP_DIR/db_$DATE.sql.gz
 
 # 备份 Neo4j
-docker-compose exec -T neo4j neo4j-admin dump --to=/var/lib/neo4j/backups/neo4j_$DATE.dump
+docker compose exec -T neo4j neo4j-admin dump --to=/var/lib/neo4j/backups/neo4j_$DATE.dump
 
 # 保留最近 7 天备份
 find $BACKUP_DIR -name "*.sql.gz" -mtime +7 -delete
@@ -570,7 +701,7 @@ echo "Backup completed: $DATE"
 crontab -e
 
 # 添加每日备份任务（每天凌晨 2 点）
-0 2 * * * /opt/component-agent/scripts/backup.sh >> /var/log/backup.log 2>&1
+0 2 * * * /opt/EMS_SYS/scripts/backup.sh >> /var/log/backup.log 2>&1
 ```
 
 ---
@@ -590,7 +721,7 @@ crontab -e
 
 ## 联系支持
 
-- **GitHub Issues**: https://github.com/YOUR_USERNAME/component-agent/issues
+- **GitHub Issues**: https://github.com/YOUR_USERNAME/EMS_SYS/issues
 - **技术文档**: `docs/` 目录
 - **运维手册**: `docs/OPS-MANUAL.md`
 

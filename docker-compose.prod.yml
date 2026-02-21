@@ -1,13 +1,14 @@
-version: '3.8'
+# Docker Compose v2 生产环境配置
+# 用法：docker compose -f docker-compose.prod.yml up -d
+# 注意：Docker Compose v2 使用横杠命令格式 (docker compose)，而非 v1 的下划线格式 (docker-compose)
 
-# 生产环境 Docker Compose 配置
-# 用法：docker-compose -f docker-compose.prod.yml up -d
+name: ems_sys
 
 services:
   # ==================== 数据库服务 ====================
   postgres:
     image: postgres:15-alpine
-    container_name: component-postgres
+    container_name: ems_sys-postgres
     restart: always
     environment:
       POSTGRES_DB: component_agent
@@ -40,7 +41,7 @@ services:
 
   neo4j:
     image: neo4j:5-community
-    container_name: component-neo4j
+    container_name: ems_sys-neo4j
     restart: always
     environment:
       NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/password}
@@ -68,9 +69,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: component-redis
+    container_name: ems_sys-redis
     restart: always
-    command: redis-server
+    command: >
+      redis-server
       --appendonly yes
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
       --maxmemory 512mb
@@ -92,7 +94,7 @@ services:
   # ==================== 对象存储 ====================
   minio:
     image: minio/minio:latest
-    container_name: component-minio
+    container_name: ems_sys-minio
     restart: always
     command: server /data --console-address ":9001"
     environment:
@@ -117,7 +119,7 @@ services:
   # ==================== 监控服务 ====================
   prometheus:
     image: prom/prometheus:latest
-    container_name: component-prometheus
+    container_name: ems_sys-prometheus
     restart: always
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -143,7 +145,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: component-grafana
+    container_name: ems_sys-grafana
     restart: always
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -170,8 +172,8 @@ services:
 
   # ==================== 微服务 ====================
   model-gateway:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-model-gateway:main
-    container_name: component-model-gateway
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-model-gateway:main
+    container_name: ems_sys-model-gateway
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -196,11 +198,12 @@ services:
       resources:
         limits:
           memory: 512M
+      mode: replicated
       replicas: 2
 
   auth-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-auth-service:main
-    container_name: component-auth-service
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-auth-service:main
+    container_name: ems_sys-auth-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -224,11 +227,12 @@ services:
       resources:
         limits:
           memory: 256M
+      mode: replicated
       replicas: 2
 
   order-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-order-service:main
-    container_name: component-order-service
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-order-service:main
+    container_name: ems_sys-order-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -262,11 +266,12 @@ services:
       resources:
         limits:
           memory: 1G
+      mode: replicated
       replicas: 2
 
   kg-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-kg-service:main
-    container_name: component-kg-service
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-kg-service:main
+    container_name: ems_sys-kg-service
     restart: always
     environment:
       NEO4J_URI: "bolt://neo4j:7687"
@@ -294,8 +299,8 @@ services:
           memory: 512M
 
   finance-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-finance-service:main
-    container_name: component-finance-service
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-finance-service:main
+    container_name: ems_sys-finance-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -320,8 +325,8 @@ services:
           memory: 256M
 
   inventory-service:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-inventory-service:main
-    container_name: component-inventory-service
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-inventory-service:main
+    container_name: ems_sys-inventory-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -350,8 +355,8 @@ services:
 
   # ==================== 前端服务 ====================
   external-portal:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-external-portal:main
-    container_name: component-external-portal
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-external-portal:main
+    container_name: ems_sys-external-portal
     restart: always
     environment:
       NUXT_PUBLIC_API_BASE: "http://nginx:8001"
@@ -369,11 +374,12 @@ services:
       resources:
         limits:
           memory: 512M
+      mode: replicated
       replicas: 2
 
   internal-admin:
-    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-component-agent}-internal-admin:main
-    container_name: component-internal-admin
+    image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-internal-admin:main
+    container_name: ems_sys-internal-admin
     restart: always
     environment:
       VITE_API_BASE: "http://nginx:8001"
@@ -391,12 +397,13 @@ services:
       resources:
         limits:
           memory: 256M
+      mode: replicated
       replicas: 1
 
   # ==================== API 网关 (Nginx) ====================
   nginx:
     image: nginx:alpine
-    container_name: component-nginx
+    container_name: ems_sys-nginx
     restart: always
     ports:
       - "80:80"
@@ -423,7 +430,7 @@ services:
   # ==================== 日志收集 ====================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: component-elasticsearch
+    container_name: ems_sys-elasticsearch
     restart: always
     environment:
       - discovery.type=single-node
@@ -445,7 +452,7 @@ services:
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.0
-    container_name: component-kibana
+    container_name: ems_sys-kibana
     restart: always
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'

@@ -3,7 +3,7 @@
 ![版本](https://img.shields.io/badge/版本 -4.0.0-blue)
 ![状态](https://img.shields.io/badge/Phase-4 完成-green)
 ![许可](https://img.shields.io/badge/许可-MIT-green)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/YOUR_USERNAME/component-agent/build.yml)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/YOUR_USERNAME/EMS_SYS/build.yml)
 
 ---
 
@@ -21,27 +21,29 @@
 
 ## 🚀 快速开始
 
+> **注意**: 本项目使用 Docker Compose v2，命令格式为 `docker compose`（横杠），而非旧的 `docker-compose`（下划线）。
+
 ### 一键部署（推荐）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/component-agent/main/scripts/deploy.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/EMS_SYS/main/scripts/deploy.sh | sudo bash
 ```
 
 ### Docker Compose 部署
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/component-agent.git
-cd component-agent
+git clone https://github.com/YOUR_USERNAME/EMS_SYS.git
+cd EMS_SYS
 cp .env.example .env
 # 编辑 .env 文件配置环境变量
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### 开发环境
 
 ```bash
 # 启动所有服务
-docker-compose up -d
+docker compose up -d
 
 # 前端开发（外部门户）
 cd frontend/external-portal && npm install && npm run dev
@@ -127,7 +129,7 @@ cd frontend/internal-admin && npm install && npm run dev
 ## 🏗️ 项目结构
 
 ```
-component-agent/
+EMS_SYS/
 ├── services/                    # 微服务代码
 │   ├── auth-service/           # Go 认证服务
 │   ├── model-gateway/          # Python 模型网关
@@ -187,7 +189,7 @@ cd frontend/internal-admin && npm run test
 
 ## 📞 联系方式
 
-- **GitHub Issues**: https://github.com/YOUR_USERNAME/component-agent/issues
+- **GitHub Issues**: https://github.com/YOUR_USERNAME/EMS_SYS/issues
 - **技术文档**: `docs/` 目录
 
 ---

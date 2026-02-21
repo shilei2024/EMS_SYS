@@ -9,11 +9,11 @@
 ```bash
 # 1. 在 GitHub 上 Fork 项目
 # 2. 克隆您的 Fork
-git clone https://github.com/YOUR_USERNAME/component-agent.git
-cd component-agent
+git clone https://github.com/YOUR_USERNAME/EMS_SYS.git
+cd EMS_SYS
 
 # 3. 添加上游仓库
-git remote add upstream https://github.com/YOUR_USERNAME/component-agent.git
+git remote add upstream https://github.com/YOUR_USERNAME/EMS_SYS.git
 ```
 
 ### 2. 配置环境
@@ -185,7 +185,7 @@ docs: update deployment guide
 
 ### 报告 Bug
 
-使用 [GitHub Issues](https://github.com/YOUR_USERNAME/component-agent/issues) 报告 Bug。
+使用 [GitHub Issues](https://github.com/YOUR_USERNAME/EMS_SYS/issues) 报告 Bug。
 
 **Bug 报告模板：**
 
@@ -247,8 +247,8 @@ git push origin v1.0.0
 
 ## 联系方式
 
-- **GitHub Issues**: https://github.com/YOUR_USERNAME/component-agent/issues
-- **讨论区**: https://github.com/YOUR_USERNAME/component-agent/discussions
+- **GitHub Issues**: https://github.com/YOUR_USERNAME/EMS_SYS/issues
+- **讨论区**: https://github.com/YOUR_USERNAME/EMS_SYS/discussions
 
 ---
 

@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_PREFIX: ${{ secrets.DOCKER_USERNAME }}/component-agent
+  IMAGE_PREFIX: ${{ secrets.DOCKER_USERNAME }}/EMS_SYS
 
 jobs:
   build:

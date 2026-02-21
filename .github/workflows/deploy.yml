@@ -17,7 +17,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_PREFIX: ${{ secrets.DOCKER_USERNAME }}/component-agent
+  IMAGE_PREFIX: ${{ secrets.DOCKER_USERNAME }}/EMS_SYS
 
 jobs:
   deploy:
@@ -51,7 +51,7 @@ jobs:
             echo "=== 开始部署元器件商城系统 ==="
 
             # 进入项目目录
-            cd /opt/component-agent
+            cd /opt/EMS_SYS
 
             # 拉取最新代码
             git pull origin main

@@ -23,7 +23,7 @@
 ### 服务器配置
 
 - [ ] SSH 连接服务器
-- [ ] 安装 Docker 和 Docker Compose
+- [ ] 安装 Docker 和 Docker Compose（**使用国内镜像**）
 - [ ] 配置 Docker 镜像加速
 - [ ] 配置防火墙规则
 
@@ -52,7 +52,68 @@
 
 ## 🚀 快速部署命令
 
-### 1. 服务器初始化
+### ⚠️ 国内服务器重要提示
+
+由于网络原因，请使用国内镜像源安装 Docker。
+
+### 1. 快速安装 Docker（推荐）
+
+```bash
+# 方式 1: 使用 DaoCloud 镜像（最简单）
+curl -fsSL https://get.daocloud.io/docker | sh
+
+# 方式 2: 使用项目脚本
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/EMS_SYS/main/scripts/install-docker.sh | bash
+
+# 方式 3: 使用阿里云镜像
+export DOWNLOAD_URL=https://mirrors.aliyun.com/docker-ce
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | apt-key add -
+add-apt-repository "deb [arch=amd64] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
+apt update && apt install -y docker-ce docker-ce-cli containerd.io
+```
+
+### 2. 安装 Docker Compose
+
+```bash
+# 使用国内镜像
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -L "https://cdn.daocloud.io/docker-compose/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# 验证安装
+docker compose version
+```
+
+### 3. 配置 Docker 镜像加速
+
+```bash
+# 配置镜像加速
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.1panel.live",
+    "https://hub.rat.dev"
+  ],
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
+}
+EOF
+
+# 重启 Docker
+systemctl daemon-reload
+systemctl restart docker
+
+# 验证配置
+docker info | grep -A 5 "Registry Mirrors"
+```
+
+### 4. 服务器初始化
 
 ```bash
 # SSH 登录服务器
@@ -70,14 +131,6 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw enable
 ```
-
-### 2. 安装 Docker
-
-```bash
-# 一键安装 Docker
-curl -fsSL https://get.docker.com | sh -s docker
-
-# 启动 Docker
 systemctl enable docker && systemctl start docker
 
 # 安装 Docker Compose
@@ -93,18 +146,18 @@ docker --version && docker-compose --version
 ```bash
 # 克隆代码
 cd /opt
-git clone https://github.com/YOUR_USERNAME/component-agent.git
-cd component-agent
+git clone https://github.com/YOUR_USERNAME/EMS_SYS.git
+cd EMS_SYS
 
 # 配置环境变量
 cp .env.example .env
 vim .env  # 编辑配置
 
 # 启动服务
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # 查看状态
-docker-compose ps
+docker compose ps
 ```
 
 ### 4. 配置 SSL
@@ -126,7 +179,7 @@ crontab -e
 ## 📁 文件结构
 
 ```
-component-agent/
+EMS_SYS/
 ├── .github/
 │   ├── workflows/
 │   │   ├── build.yml          # Docker 镜像构建
@@ -236,52 +289,52 @@ openssl rand -base64 12
 
 ```bash
 # 启动所有服务
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # 停止所有服务
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down
 
 # 重启服务
-docker-compose restart
+docker compose restart
 
 # 查看服务状态
-docker-compose ps
+docker compose ps
 
 # 查看日志
-docker-compose logs -f
-docker-compose logs [service-name]
+docker compose logs -f
+docker compose logs [service-name]
 ```
 
 ### 数据库管理
 
 ```bash
 # 进入数据库
-docker-compose exec postgres psql -U postgres -d component_agent
+docker compose exec postgres psql -U postgres -d component_agent
 
 # 备份数据库
-docker-compose exec postgres pg_dump -U postgres component_agent > backup.sql
+docker compose exec postgres pg_dump -U postgres component_agent > backup.sql
 
 # 恢复数据库
-docker-compose exec -T postgres psql -U postgres component_agent < backup.sql
+docker compose exec -T postgres psql -U postgres component_agent < backup.sql
 
 # 查看数据库大小
-docker-compose exec postgres psql -U postgres -c "SELECT pg_size_pretty(pg_database_size('component_agent'));"
+docker compose exec postgres psql -U postgres -c "SELECT pg_size_pretty(pg_database_size('component_agent'));"
 ```
 
 ### 日志管理
 
 ```bash
 # 查看所有日志
-docker-compose logs -f
+docker compose logs -f
 
 # 查看特定服务日志
-docker-compose logs -f auth-service
+docker compose logs -f auth-service
 
 # 导出日志
-docker-compose logs > logs.txt
+docker compose logs > logs.txt
 
 # 清理日志
-docker-compose down -v
+docker compose down -v
 ```
 
 ### 备份恢复
@@ -344,7 +397,7 @@ groups:
 
 ```bash
 # 查看日志
-docker-compose logs [service-name]
+docker compose logs [service-name]
 
 # 检查端口占用
 netstat -tulpn | grep [port]
@@ -357,10 +410,10 @@ docker stats
 
 ```bash
 # 检查数据库状态
-docker-compose ps postgres
+docker compose ps postgres
 
 # 测试连接
-docker-compose exec postgres psql -U postgres -c "SELECT 1"
+docker compose exec postgres psql -U postgres -c "SELECT 1"
 ```
 
 **Q3: 内存不足**
@@ -382,7 +435,7 @@ docker stats
 
 ## 📞 获取帮助
 
-- **GitHub Issues**: https://github.com/YOUR_USERNAME/component-agent/issues
+- **GitHub Issues**: https://github.com/YOUR_USERNAME/EMS_SYS/issues
 - **技术文档**: `docs/` 目录
 - **部署指南**: [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md)
 

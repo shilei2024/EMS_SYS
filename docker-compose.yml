@@ -1,10 +1,12 @@
-version: '3.8'
+# Docker Compose v2 开发环境配置
+# 用法：docker compose up -d
+# 注意：Docker Compose v2 使用横杠命令格式 (docker compose)，而非 v1 的下划线格式 (docker-compose)
 
 services:
   # ==================== 数据库服务 ====================
   postgres:
     image: postgres:15-alpine
-    container_name: component-agent-postgres
+    container_name: ems_sys-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: component_agent
@@ -26,7 +28,7 @@ services:
 
   neo4j:
     image: neo4j:5-enterprise
-    container_name: component-agent-neo4j
+    container_name: ems_sys-neo4j
     restart: unless-stopped
     environment:
       NEO4J_AUTH: "${NEO4J_AUTH:-neo4j/password}"
@@ -51,7 +53,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: component-agent-redis
+    container_name: ems_sys-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD environment variable is required}
     ports:
@@ -67,7 +69,7 @@ services:
   # ==================== 消息队列 (可选) ====================
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: component-agent-rabbitmq
+    container_name: ems_sys-rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: admin
@@ -87,7 +89,7 @@ services:
   # ==================== 对象存储 (MinIO) ====================
   minio:
     image: minio/minio:latest
-    container_name: component-agent-minio
+    container_name: ems_sys-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -108,7 +110,7 @@ services:
   # ==================== 监控服务 ====================
   prometheus:
     image: prom/prometheus:latest
-    container_name: component-agent-prometheus
+    container_name: ems_sys-prometheus
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -130,7 +132,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: component-agent-grafana
+    container_name: ems_sys-grafana
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -154,7 +156,7 @@ services:
     build:
       context: ./services/model-gateway
       dockerfile: Dockerfile.dev
-    container_name: component-agent-model-gateway
+    container_name: ems_sys-model-gateway
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
@@ -182,7 +184,7 @@ services:
     build:
       context: ./services/auth-service
       dockerfile: Dockerfile.dev
-    container_name: component-agent-auth-service
+    container_name: ems_sys-auth-service
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
@@ -210,7 +212,7 @@ services:
     build:
       context: ./services/order-service
       dockerfile: Dockerfile.dev
-    container_name: component-agent-order-service
+    container_name: ems_sys-order-service
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
@@ -248,7 +250,7 @@ services:
     build:
       context: ./services/kg-service
       dockerfile: Dockerfile.dev
-    container_name: component-agent-kg-service
+    container_name: ems_sys-kg-service
     restart: unless-stopped
     environment:
       NEO4J_URI: "bolt://neo4j:7687"
@@ -278,7 +280,7 @@ services:
     build:
       context: ./services/finance-service
       dockerfile: Dockerfile.dev
-    container_name: component-agent-finance-service
+    container_name: ems_sys-finance-service
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
@@ -305,7 +307,7 @@ services:
     build:
       context: ./services/inventory-service
       dockerfile: Dockerfile.dev
-    container_name: component-agent-inventory-service
+    container_name: ems_sys-inventory-service
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/component_agent"
@@ -330,10 +332,10 @@ services:
       timeout: 10s
       retries: 3
 
-  # ==================== API网关 (Nginx) ====================
+  # ==================== API 网关 (Nginx) ====================
   nginx:
     image: nginx:alpine
-    container_name: component-agent-nginx
+    container_name: ems_sys-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -354,7 +356,7 @@ services:
   # ==================== 日志收集 (ELK) ====================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: component-agent-elasticsearch
+    container_name: ems_sys-elasticsearch
     restart: unless-stopped
     environment:
       - discovery.type=single-node
@@ -372,7 +374,7 @@ services:
 
   logstash:
     image: docker.elastic.co/logstash/logstash:8.11.0
-    container_name: component-agent-logstash
+    container_name: ems_sys-logstash
     restart: unless-stopped
     volumes:
       - ./infrastructure/logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
@@ -387,7 +389,7 @@ services:
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.0
-    container_name: component-agent-kibana
+    container_name: ems_sys-kibana
     restart: unless-stopped
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
@@ -402,6 +404,7 @@ services:
       timeout: 10s
       retries: 3
 
+# ==================== 数据卷 ====================
 volumes:
   postgres_data:
   neo4j_data:
