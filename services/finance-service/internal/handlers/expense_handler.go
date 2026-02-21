@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"strconv"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"component-agent/finance-service/internal/config"
-	"component-agent/finance-service/internal/encryption"
+	
 )
 
 type ExpenseHandler struct {
@@ -94,8 +95,16 @@ func (h *ExpenseHandler) ListExpenses(c *gin.Context) {
 	status := c.Query("status")
 	userID := c.Query("user_id")
 	expenseType := c.Query("type")
-	page := c.DefaultQuery("page", "1")
-	pageSize := c.DefaultQuery("page_size", "20")
+	pageStr := c.DefaultQuery("page", "1")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	pageSizeStr := c.DefaultQuery("page_size", "20")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		pageSize = 20
+	}
 
 	// 构建查询
 	query := `

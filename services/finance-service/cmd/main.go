@@ -40,7 +40,7 @@ func main() {
 	defer db.Close()
 
 	// 运行数据库迁移
-	if err := database.RunMigrations(db); err != nil {
+	if err := database.RunMigrations(db.DB); err != nil {
 		logger.Fatal("Failed to run database migrations", zap.Error(err))
 	}
 
@@ -57,12 +57,12 @@ func main() {
 	// 添加中间件
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger))
-	router.Use(middleware.CORS(cfg.CORS))
+	router.Use(middleware.CORS(middleware.CORSConfig{AllowOrigins: cfg.CORS.AllowOrigins, AllowMethods: cfg.CORS.AllowMethods, AllowHeaders: cfg.CORS.AllowHeaders, AllowCredentials: true}))
 
 	// 初始化处理器
-	expenseHandler := handlers.NewExpenseHandler(db, cfg, logger)
-	salaryHandler := handlers.NewSalaryHandler(db, cfg, logger)
-	reconciliationHandler := handlers.NewReconciliationHandler(db, cfg, logger)
+	expenseHandler := handlers.NewExpenseHandler(db.DB, cfg, logger)
+	salaryHandler := handlers.NewSalaryHandler(db.DB, cfg, logger)
+	reconciliationHandler := handlers.NewReconciliationHandler(db.DB, cfg, logger)
 
 	// 公开路由
 	public := router.Group("/api/v1")

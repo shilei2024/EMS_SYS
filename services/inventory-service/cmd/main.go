@@ -33,7 +33,7 @@ func main() {
 	defer logger.Sync()
 
 	// 初始化数据库连接
-	db, err := database.NewConnection(cfg.Database)
+	db, err := database.NewConnection(cfg.Database.URL)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
@@ -57,7 +57,7 @@ func main() {
 	// 添加中间件
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger))
-	router.Use(middleware.CORS(cfg.CORS))
+	router.Use(middleware.CORS(middleware.CORSConfig{AllowOrigins: cfg.CORS.AllowOrigins, AllowMethods: cfg.CORS.AllowMethods, AllowHeaders: cfg.CORS.AllowHeaders, AllowCredentials: true}))
 
 	// 初始化处理器
 	inventoryHandler := handlers.NewInventoryHandler(db, cfg, logger)

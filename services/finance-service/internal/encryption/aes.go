@@ -81,7 +81,11 @@ func (e *AESEncryptor) Decrypt(ciphertext string) (string, error) {
 
 // HashPassword 密码哈希
 func HashPassword(password string) (string, error) {
-	return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashed), nil
 }
 
 // CheckPassword 验证密码
