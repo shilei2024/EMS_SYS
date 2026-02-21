@@ -56,7 +56,7 @@
           <template #default="{ row }">
             <el-button type="primary" link @click="handleView(row)">查看</el-button>
             <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button type="primary" link @click="findSubstitutes(row)">替代料</el-button>
+            <el-button type="primary" link @click="viewSubstitutes(row)">替代料</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -293,15 +293,8 @@ function resetComponentForm() {
   componentFormRef.value?.clearValidate()
 }
 
-function handleView(row: any) {
-  ElMessage.info(`查看元器件: ${row.mpn}`)
-}
 
-function handleEdit(row: any) {
-  ElMessage.info(`编辑元器件: ${row.mpn}`)
-}
-
-async function findSubstitutes(row: any) {
+async function viewSubstitutes(row: any) {
   try {
     const res = await findSubstitutes(row.mpn, row.manufacturer)
     substitutes.value = res.substitutes || []

@@ -3,8 +3,7 @@
     <!-- 侧边栏 -->
     <el-aside :width="isCollapse ? '64px' : '220px'" class="sidebar">
       <div class="logo">
-        <img v-if="!isCollapse" src="/logo.png" alt="logo" @error="handleImgError" />
-        <span v-if="!isCollapse" class="logo-text">元器件系统</span>
+        <span v-if="!isCollapse" class="logo-text-large">EMS_SYS</span>
         <span v-else class="logo-text">ECS</span>
       </div>
 
@@ -133,14 +132,6 @@ function handleCommand(command: string) {
       break
   }
 }
-
-function handleImgError(e: Event) {
-  // 处理图片加载失败
-  const target = e.target as HTMLImageElement
-  if (target) {
-    target.style.display = 'none'
-  }
-}
 </script>
 
 <style scoped>
@@ -163,9 +154,11 @@ function handleImgError(e: Event) {
   background: #2b3a4a;
 }
 
-.logo img {
-  height: 32px;
-  margin-right: 10px;
+.logo-text-large {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
 }
 
 .logo-text {

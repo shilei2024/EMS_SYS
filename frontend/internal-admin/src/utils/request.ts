@@ -2,7 +2,8 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001'
+// 生产环境使用 API 网关（Nginx 端口 80），开发环境使用代理
+const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 const service: AxiosInstance = axios.create({
   baseURL,

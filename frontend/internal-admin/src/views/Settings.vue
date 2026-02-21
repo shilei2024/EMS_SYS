@@ -64,9 +64,9 @@
             <el-table-column prop="source_type" label="类型" width="120">
               <template #default="{ row }">
                 <el-tag>{{ getSourceTypeText(row.source_type) }}</el-tag>
-              </el-table-column>
-            <el-table-column prop="config</template>
-            " label="配置" min-width="200">
+              </template>
+            </el-table-column>
+            <el-table-column prop="config" label="配置" min-width="200">
               <template #default="{ row }">
                 <span v-if="row.source_type === 'api'">API端点: {{ row.config?.endpoint }}</span>
                 <span v-else-if="row.source_type === 'imap'">邮箱: {{ row.config?.host }}</span>

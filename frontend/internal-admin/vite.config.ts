@@ -12,14 +12,18 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // 所有 API 请求通过网关转发到各个微服务
       '/api': {
-        target: 'http://localhost:8001',
-        changeOrigin: true
+        target: 'http://localhost:80',  // API 网关（Nginx）
+        changeOrigin: true,
+        secure: false
       },
+      // WebSocket 连接
       '/api/v1/ws': {
-        target: 'ws://localhost:8001',
+        target: 'ws://localhost:80',
         ws: true,
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       }
     }
   },

@@ -57,7 +57,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Bell, Document, Warning, Info, Check } from '@element-plus/icons-vue'
+import { Bell, Document, Warning } from '@element-plus/icons-vue'
 import { ElDropdown } from 'element-plus'
 import { wsService, MessageType, WSMessage, getWebSocketUrl } from '../utils/websocket'
 
@@ -81,9 +81,9 @@ function getTypeIcon(type: MessageType) {
   const map: Record<MessageType, any> = {
     [MessageType.ORDER_STATUS_CHANGED]: Document,
     [MessageType.INVENTORY_ALERT]: Warning,
-    [MessageType.SYSTEM_NOTIFICATION]: Info
+    [MessageType.SYSTEM_NOTIFICATION]: Warning
   }
-  return map[type] || Info
+  return map[type] || Warning
 }
 
 // 获取消息类型对应的样式
