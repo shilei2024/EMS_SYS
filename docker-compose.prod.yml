@@ -359,8 +359,6 @@ services:
       NODE_ENV: "production"
     expose:
       - "3000"
-    depends_on:
-      - nginx
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/"]
       interval: 30s
@@ -381,8 +379,6 @@ services:
       NODE_ENV: "production"
     expose:
       - "3001"
-    depends_on:
-      - nginx
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/"]
       interval: 30s
@@ -408,10 +404,10 @@ services:
       - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - external-portal
-      - internal-admin
-      - auth-service
-      - model-gateway
+      auth-service:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 30s
