@@ -173,7 +173,6 @@ services:
   # ==================== 微服务 ====================
   model-gateway:
     image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-model-gateway:main
-    container_name: ems_sys-model-gateway
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -203,7 +202,6 @@ services:
 
   auth-service:
     image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-auth-service:main
-    container_name: ems_sys-auth-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -232,7 +230,6 @@ services:
 
   order-service:
     image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-order-service:main
-    container_name: ems_sys-order-service
     restart: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/component_agent"
@@ -356,7 +353,6 @@ services:
   # ==================== 前端服务 ====================
   external-portal:
     image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-external-portal:main
-    container_name: ems_sys-external-portal
     restart: always
     environment:
       NUXT_PUBLIC_API_BASE: "http://nginx:8001"
@@ -379,7 +375,6 @@ services:
 
   internal-admin:
     image: ${REGISTRY:-docker.io}/${IMAGE_PREFIX:-ems_sys}-internal-admin:main
-    container_name: ems_sys-internal-admin
     restart: always
     environment:
       VITE_API_BASE: "http://nginx:8001"
